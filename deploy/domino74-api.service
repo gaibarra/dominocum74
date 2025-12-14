@@ -1,0 +1,16 @@
+[Unit]
+Description=Dominó CUM 74 API container
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/var/www/dominocum74/current
+ExecStart=/usr/bin/docker compose -f docker-compose.api.yml up -d --build
+ExecStop=/usr/bin/docker compose -f docker-compose.api.yml down
+RemainAfterExit=yes
+Environment=DATABASE_URL=${DATABASE_URL}
+Environment=API_KEY=${API_KEY}
+
+[Install]
+WantedBy=multi-user.target
