@@ -5,36 +5,37 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 const testimonials = [
   {
-    name: "Carlos Rodríguez",
-    position: "Director de Inversiones Inmobiliarias",
-    company: "Grupo Inmobiliario XYZ",
-    content: "La valuación realizada fue fundamental para nuestra decisión de inversión. El informe detallado y el análisis de mercado nos dieron la confianza necesaria para proceder con la compra del inmueble.",
-    image: ""
+    name: "Valeria Uc",
+    position: "Capitana · Mesa 3",
+    company: "Velada 72",
+    content: "Poder revisar quién llegó, qué manos jugamos y cuánto sumamos nos ha evitado discusiones eternas. El dashboard se volvió el tercer árbitro.",
+    image: "https://images.unsplash.com/photo-1494790108377-be9c29b29330"
   },
   {
-    name: "Laura Méndez",
-    position: "Gerente General",
-    company: "Constructora Méndez",
-    content: "Excelente servicio profesional. La valuación de nuestra empresa fue realizada con gran precisión y nos ayudó enormemente en el proceso de fusión. Recomiendo ampliamente sus servicios.",
-    image: ""
+    name: "Dr. Martín Parra",
+    position: "Organizador histórico",
+    company: "CUM 74",
+    content: "Antes tardábamos dos días en cerrar actas y publicar resultados. Ahora en 15 minutos enviamos la crónica con tablas y fotos a todo el club.",
+    image: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e"
   },
   {
-    name: "Miguel Ángel Torres",
-    position: "Propietario",
-    company: "Torres & Asociados",
-    content: "El peritaje judicial realizado fue clave para resolver favorablemente nuestro caso. La claridad del informe y la solidez técnica fueron determinantes en la decisión del juez.",
-    image: ""
+    name: "Renata Peña",
+    position: "Jugadora novata",
+    company: "Liga abierta",
+    content: "Entré a la comunidad sin conocer a nadie. El registro de pares y las historias de veladas me ayudaron a entender la cultura y sentirme parte.",
+    image: "https://images.unsplash.com/photo-1544723795-3fb6469f5b39"
   }
 ];
 
 const Testimonials = () => {
   return (
-    <section className="py-20 bg-gray-50">
+    <section className="py-24 bg-slate-50">
       <div className="container mx-auto px-4">
         <div className="text-center max-w-3xl mx-auto mb-16">
-          <h2 className="mb-4">Lo que Dicen Nuestros Clientes</h2>
+          <p className="uppercase tracking-[0.3em] text-xs text-primary mb-3">Voces del club</p>
+          <h2 className="mb-4">Historias que hacen grande a la velada</h2>
           <p className="text-lg text-gray-600">
-            La satisfacción de nuestros clientes es nuestro mejor aval. Conoce las experiencias de quienes han confiado en nuestros servicios.
+            Cada reseña es una ficha más en la memoria del Dominó CUM 74. Jugadores, anfitriones y nuevos talentos comparten cómo la plataforma elevó la experiencia.
           </p>
         </div>
         
@@ -47,7 +48,7 @@ const Testimonials = () => {
               viewport={{ once: true }}
               transition={{ duration: 0.5, delay: index * 0.1 }}
             >
-              <div className="bg-white p-8 rounded-lg shadow-md h-full flex flex-col">
+              <div className="bg-white p-8 rounded-3xl shadow-lg h-full flex flex-col border border-slate-100">
                 <Quote className="h-10 w-10 text-primary/20 mb-4" />
                 
                 <p className="text-gray-700 mb-6 flex-grow">

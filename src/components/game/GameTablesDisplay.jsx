@@ -163,11 +163,16 @@ export default function GameTablesDisplay({
   const requestCancel = (tableId) => {
     const t = tables.find((/** @type {Table} */ x) => x.id === tableId);
     if (!t) return;
-    setCancelData({ table: t });
+    setCancelData({ table: t, password: "", error: null });
   };
 
   const confirmCancel = () => {
     if (!cancelData?.table) return;
+    const isValid = (cancelData.password || "").trim() === "bacanora2024";
+    if (!isValid) {
+      setCancelData((prev) => (prev ? { ...prev, error: "Contraseña incorrecta." } : prev));
+      return;
+    }
     onCancelTable?.(cancelData.table.id);
     setCancelData(null);
   };
@@ -350,6 +355,29 @@ export default function GameTablesDisplay({
             ),
           React.createElement(
             "div",
+            { className: "space-y-2" },
+            React.createElement(
+              "label",
+              { className: "text-sm font-medium" },
+              'Escribe "bacanora2024" para confirmar'
+            ),
+            React.createElement("input", {
+              type: "password",
+              className:
+                "w-full rounded-md border border-border bg-background/80 px-3 py-2 text-sm focus:border-primary focus:outline-none",
+              placeholder: "Contraseña de confirmación",
+              value: cancelData.password,
+              onChange: (event) => setCancelData((prev) => (prev ? { ...prev, password: event.target.value, error: null } : prev)),
+            }),
+            cancelData.error &&
+              React.createElement(
+                "p",
+                { className: "text-sm text-destructive" },
+                cancelData.error
+              )
+          ),
+          React.createElement(
+            "div",
             { className: "flex justify-end gap-2" },
             React.createElement(
               "button",
@@ -359,8 +387,9 @@ export default function GameTablesDisplay({
             React.createElement(
               "button",
               {
-                className: "px-3 py-1.5 rounded-md bg-destructive text-destructive-foreground",
+                className: "px-3 py-1.5 rounded-md bg-destructive text-destructive-foreground disabled:opacity-50 disabled:cursor-not-allowed",
                 onClick: confirmCancel,
+                disabled: (cancelData.password || "").trim() !== "bacanora2024",
               },
               "Eliminar Mesa"
             )

@@ -8,28 +8,28 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 const posts = [
   {
     id: 1,
-    title: "Factores que influyen en la valuación de inmuebles comerciales",
-    excerpt: "Descubre los principales factores que determinan el valor de los inmuebles comerciales en el mercado actual y cómo maximizar su potencial.",
-    date: "15 Mayo, 2025",
-    image: "",
-    slug: "factores-valuacion-inmuebles-comerciales"
+    title: "Cómo armamos la Velada 74 en 25 minutos",
+    excerpt: "Checklist, roles y automatizaciones para recibir a 60 jugadores sin caos y con crónica lista antes de medianoche.",
+    date: "12 Dic, 2025",
+    image: "https://images.unsplash.com/photo-1513863323963-1cc3c6889a83",
+    slug: "velada-74-checklist",
   },
   {
     id: 2,
-    title: "Métodos de valuación de empresas: ¿Cuál es el más adecuado?",
-    excerpt: "Analizamos los diferentes métodos de valuación de empresas y te ayudamos a identificar cuál es el más adecuado según el tipo y tamaño de tu negocio.",
-    date: "2 Mayo, 2025",
-    image: "",
-    slug: "metodos-valuacion-empresas"
+    title: "Trucos para rotar mesas sin romper las rachas",
+    excerpt: "Guía rápida para equilibrar parejas, mantener la competitividad y documentar cada cambio dentro de la app.",
+    date: "4 Dic, 2025",
+    image: "https://images.unsplash.com/photo-1504274066651-8d31a536b11a",
+    slug: "rotar-mesas-cum",
   },
   {
     id: 3,
-    title: "La importancia de los avalúos en procesos de herencia",
-    excerpt: "Conoce por qué es fundamental contar con avalúos profesionales durante los procesos de herencia y cómo pueden evitar conflictos familiares.",
-    date: "28 Abril, 2025",
-    image: "",
-    slug: "importancia-avaluos-herencia"
-  }
+    title: "Fotografía y narrativa: la crónica que todos comparten",
+    excerpt: "Tips para capturar momentos clave, etiquetar jugadores y lanzar la galería minutos después de cerrar las manos.",
+    date: "28 Nov, 2025",
+    image: "https://images.unsplash.com/photo-1454496522488-7a8e488e8606",
+    slug: "cronica-velada",
+  },
 ];
 
 const container = {
@@ -49,13 +49,14 @@ const item = {
 
 const LatestPosts = () => {
   return (
-    <section className="py-20">
+    <section className="py-24">
       <div className="container mx-auto px-4">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-12">
           <div>
-            <h2 className="mb-4">Últimos Artículos</h2>
+            <p className="uppercase tracking-[0.3em] text-xs text-primary mb-3">Blog del club</p>
+            <h2 className="mb-4">Crónicas y consejos para no perder ninguna ficha</h2>
             <p className="text-lg text-gray-600 max-w-2xl">
-              Mantente actualizado con nuestros artículos sobre valuación, mercado inmobiliario y tendencias del sector.
+              Experiencias del comité organizador, guías de protocolos y hacks que hacen únicas las noches de Dominó del CUM 74.
             </p>
           </div>
           <Button asChild variant="outline" className="mt-4 md:mt-0">
@@ -77,7 +78,7 @@ const LatestPosts = () => {
             <motion.div key={post.id} variants={item}>
               <Card className="h-full card-hover">
                 <div className="relative h-48 overflow-hidden rounded-t-lg">
-                  <img  alt={post.title} className="w-full h-full object-cover" src="https://images.unsplash.com/photo-1685219789185-15f3fab44379" />
+                  <img  alt={post.title} className="w-full h-full object-cover" src={post.image} />
                 </div>
                 <CardHeader>
                   <div className="flex items-center text-sm text-gray-500 mb-2">

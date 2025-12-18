@@ -47,7 +47,7 @@ const GameCard = ({ game, isActiveGame, isAnotherGameActive, isUpdatingStatus, o
               onClick={() => navigate(`/game/${game.id}`)}
               className="border-primary text-primary hover:bg-primary/10"
             >
-              <ArrowRight className="mr-1 h-4 w-4" /> Ver
+              <ArrowRight className="mr-1 h-4 w-4" /> Ingresar a la Velada
             </Button>
           {game.status === "En curso" ? (
             <>

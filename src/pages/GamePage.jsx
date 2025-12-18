@@ -1,7 +1,8 @@
 // src/pages/GamePage.jsx
 import React, { useState, useCallback, useMemo, Suspense, lazy } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useToast } from "@/components/ui/use-toast";
-import { Loader2, AlertTriangle, RefreshCw } from "lucide-react";
+import { Loader2, AlertTriangle, RefreshCw, PlusCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useGameData } from "@/components/game/game_page_components/useGameData";
 import { useTableManagement } from "@/components/game/game_page_components/useTableManagement";
@@ -67,6 +68,11 @@ const GamePage = () => {
     error,
     fetchGameAndPlayersData,
   } = useGameData();
+
+  const [searchParams] = useSearchParams();
+  const shouldFocusAttendance = searchParams.get("focus") === "attendance";
+  const [highlightAttendance, setHighlightAttendance] = useState(false);
+  const hasAutoFocusedAttendance = React.useRef(false);
 
   const {
     isAddTableDialogOpen,
@@ -273,6 +279,21 @@ const GamePage = () => {
     };
   }, []);
 
+  React.useEffect(() => {
+    if (!shouldFocusAttendance || hasAutoFocusedAttendance.current) return;
+    if (isLoading || !game?.id) return;
+    hasAutoFocusedAttendance.current = true;
+    setHighlightAttendance(true);
+    const scrollTimer = setTimeout(() => {
+      document?.getElementById("attendance")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 120);
+    const resetTimer = setTimeout(() => setHighlightAttendance(false), 2400);
+    return () => {
+      clearTimeout(scrollTimer);
+      clearTimeout(resetTimer);
+    };
+  }, [shouldFocusAttendance, isLoading, game?.id]);
+
   // controla vista de mesas activas vs finalizadas
   const [showFinishedTables, setShowFinishedTables] = useState(false);
 
@@ -300,6 +321,11 @@ const GamePage = () => {
     game,
     playersData,
     selectedPlayersInGame
+  );
+
+  const checkedInIds = useMemo(
+    () => new Set(attendance.filter((a) => !!a.check_in_time).map((a) => String(a.player_id))),
+    [attendance]
   );
 
   const presentCount = React.useMemo(() => {
@@ -509,17 +535,23 @@ const GamePage = () => {
       ),
 
       // Asistencia y banca (más visible)
-      React.createElement(AttendancePanel, {
-        id: "attendance",
-        game,
-        playersData,
-        attendance,
-        benchPlayers,
-        onCheckIn,
-        onCheckOut,
-        onBackfillNextDay,
-        selectedPlayersInGame
-      }),
+      React.createElement(
+        "div",
+        {
+          className: `transition-all duration-500 ${highlightAttendance ? "ring-4 ring-sky-400 rounded-2xl shadow-lg" : ""}`
+        },
+        React.createElement(AttendancePanel, {
+          id: "attendance",
+          game,
+          playersData,
+          attendance,
+          benchPlayers,
+          onCheckIn,
+          onCheckOut,
+          onBackfillNextDay,
+          selectedPlayersInGame
+        })
+      ),
 
       React.createElement(
         "div",
@@ -560,6 +592,21 @@ const GamePage = () => {
         })
       )
     ),
+
+    game.status === "En curso" &&
+      React.createElement(
+        "button",
+        {
+          type: "button",
+          onClick: handleGuardedOpenAddTable,
+          className: "fixed top-24 right-4 sm:right-6 z-40 inline-flex items-center gap-2 rounded-full bg-rose-500 px-5 py-3 text-white shadow-xl shadow-rose-500/30 transition hover:-translate-y-1 hover:bg-rose-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-200",
+          title: benchCount < 4
+            ? "Necesitas al menos 4 jugadores libres en banca"
+            : "Crear una nueva mesa"
+        },
+        React.createElement(PlusCircle, { className: "h-5 w-5" }),
+        React.createElement("span", { className: "text-sm font-semibold tracking-wide uppercase" }, "Agregar mesa")
+      ),
 
     React.createElement(
       AnimatePresence,

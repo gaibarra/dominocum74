@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import {
   CalendarDays,
   Edit3,
-  PlusCircle,
   CheckSquare,
   FileDown,
   Eye,
@@ -28,7 +27,6 @@ const GameHeader = ({
   cardVariants,
   showFinishedTables,
   setShowFinishedTables,
-  onAddTable,
   presentCount = 0,
   benchCount = 0,
 }) => {
@@ -159,29 +157,6 @@ const GameHeader = ({
           <span className="text-xs font-medium px-2 py-1 rounded-full bg-emerald-500/15 text-emerald-500 border border-emerald-500/30">
             Presentes: {presentCount} • Libres: {benchCount}
           </span>
-          <Button onClick={onRefresh} variant="outline" className="neumorphism-button">
-            <RefreshCw className="mr-2 h-4 w-4" /> Actualizar
-          </Button>
-          <Button
-            onClick={() => document?.getElementById('attendance')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-            variant="outline"
-            className="neumorphism-button"
-          >
-            Registrar llegadas
-          </Button>
-          {game.status === 'En curso' && (
-            <Button
-              onMouseEnter={() => import('@/components/game/AddTableDialog')}
-              onClick={onAddTable}
-              disabled={presentCount < 4 || benchCount < 4}
-              className="neumorphism-button bg-secondary hover:bg-secondary/90"
-            >
-              <PlusCircle className="mr-2 h-4 w-4" /> Agregar Mesa
-            </Button>
-          )}
-          <Button onClick={handleDownloadPdf} variant="outline" className="neumorphism-button">
-            <FileDown className="mr-2 h-4 w-4" /> Descargar PDF
-          </Button>
         </div>
       </div>
 
@@ -202,7 +177,7 @@ const GameHeader = ({
           </span>
         )}
 
-  <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2">
           {game.status === 'Borrador' && (
             <Button
               onClick={() => handleUpdateStatus('En curso')}
@@ -258,8 +233,16 @@ const GameHeader = ({
           >
             {showFinishedTables
               ? <><EyeOff className="mr-2 h-4 w-4" /> Ver en Curso</>
-              : <><Eye className="mr-2 h-4 w-4" /> Ver Finalizadas</>
+              : <><Eye className="mr-2 h-4 w-4" /> Ver Mesas Finalizadas</>
             }
+          </Button>
+
+          {/* Acciones generales */}
+          <Button onClick={onRefresh} variant="outline" className="neumorphism-button-sm">
+            <RefreshCw className="mr-2 h-4 w-4" /> Actualizar
+          </Button>
+          <Button onClick={handleDownloadPdf} variant="outline" className="neumorphism-button-sm">
+            <FileDown className="mr-2 h-4 w-4" /> Descargar PDF
           </Button>
         </div>
       </div>

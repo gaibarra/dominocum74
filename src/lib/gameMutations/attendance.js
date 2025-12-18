@@ -13,10 +13,11 @@ const looksClosed = (game) => {
 export const getAttendanceByGame = async (gameId) => {
   try {
     const data = await apiClient.get(`/games/${gameId}/attendance`);
-    return data || [];
+    if (data && typeof data === 'object') return data;
+    return { attendance: Array.isArray(data) ? data : [], bench: [] };
   } catch (error) {
     console.warn('Attendance fetch error:', error.message);
-    return [];
+    throw error;
   }
 };
 
@@ -31,7 +32,7 @@ export const checkOutPlayer = async (gameId, playerId, when = new Date().toISOSt
 export const backfillMissingCheckoutsForGame = async (game) => {
   if (!game?.id) return { updated: 0 };
   try {
-    const attendance = await getAttendanceByGame(game.id);
+    const { attendance = [] } = await getAttendanceByGame(game.id);
     const hasMissing = attendance.some((a) => a.check_in_time && !a.check_out_time);
     const gameClosed = looksClosed(game);
     const isOlderThanTwelveHours = game?.date ? dayjs().diff(dayjs(game.date), 'hour') >= 12 : false;

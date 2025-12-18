@@ -64,7 +64,8 @@ CREATE TABLE IF NOT EXISTS game_partidas (
   closed_at TIMESTAMPTZ,
   winner_pair_index INTEGER,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (game_table_id, partida_index)
 );
 
 CREATE TABLE IF NOT EXISTS game_hands (

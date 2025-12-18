@@ -10,9 +10,14 @@ import {
   getGameIdForTable,
 } from './partidasService.js';
 import { publishGameEvent } from '../realtime/gameEventBus.js';
+import { conflictError, badRequestError, notFoundError } from '../utils/httpErrors.js';
+import { backfillMissingCheckoutsWithClient } from './attendanceService.js';
 
 const ACTIVE_GAME_CONFLICT_CODE = 'ACTIVE_GAME_EXISTS';
 const ACTIVE_GAME_CONFLICT_MESSAGE = 'Ya existe una velada en curso. Finalízala o cancélala antes de crear una nueva.';
+const PG_UNIQUE_VIOLATION = '23505';
+
+const isUniqueViolation = (error) => error?.code === PG_UNIQUE_VIOLATION;
 
 const assertNoActiveGameConflict = async (client, excludeGameId = null) => {
   let sql = 'SELECT id FROM games WHERE status = $1';
@@ -148,6 +153,17 @@ const syncHandsForTable = async (client, tableId, hands = [], now) => {
       ]);
     }
   }
+};
+
+const computeNextHandNumber = async (client, tableId, requestedNumber = null) => {
+  if (Number.isInteger(requestedNumber) && requestedNumber > 0) {
+    return requestedNumber;
+  }
+  const { rows } = await client.query(
+    'SELECT COALESCE(MAX(hand_number), 0) + 1 AS next_number FROM game_hands WHERE game_table_id = $1',
+    [tableId],
+  );
+  return rows[0]?.next_number || 1;
 };
 
 const syncTablesForGame = async (client, gameId, tables = [], now) => {
@@ -321,47 +337,69 @@ export const updateGameStatus = async (id, status) => {
       params = [status, now, id];
     }
     const { rows } = await client.query(sql, params);
-    return rows[0] || null;
+    const updated = rows[0] || null;
+    if (updated && status === 'Finalizada') {
+      await backfillMissingCheckoutsWithClient(client, id);
+    }
+    return updated;
   });
 };
 
 export const addTableToGame = async (gameId, tablePayload) => {
-  const table = await withTransaction(async (client) => {
-    const now = nowUTC();
-    const fields = mapTableFields(tablePayload);
-    const insertSql = `INSERT INTO game_tables (game_id, table_number, points_to_win_partida, games_won_pair1,
-      games_won_pair2, partida_finished, finished_at, created_at, updated_at)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8)
-      RETURNING *`;
-    const { rows } = await client.query(insertSql, [
-      gameId,
-      fields.table_number,
-      fields.points_to_win_partida,
-      fields.games_won_pair1,
-      fields.games_won_pair2,
-      fields.partida_finished,
-      fields.finished_at,
-      now,
-    ]);
-    const createdTable = rows[0];
-    if (Array.isArray(tablePayload.pairs)) {
-      await upsertPairsForTable(client, createdTable.id, tablePayload.pairs, now);
-    }
-    const pairs = await loadPairsWithPlayers(client, createdTable.id);
-    return { ...createdTable, pairs, hands: [] };
-  });
+  try {
+    const table = await withTransaction(async (client) => {
+      const now = nowUTC();
+      const fields = mapTableFields(tablePayload);
+      const insertSql = `INSERT INTO game_tables (game_id, table_number, points_to_win_partida, games_won_pair1,
+        games_won_pair2, partida_finished, finished_at, created_at, updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$8)
+        RETURNING *`;
+      const { rows } = await client.query(insertSql, [
+        gameId,
+        fields.table_number,
+        fields.points_to_win_partida,
+        fields.games_won_pair1,
+        fields.games_won_pair2,
+        fields.partida_finished,
+        fields.finished_at,
+        now,
+      ]);
+      const createdTable = rows[0];
+      if (Array.isArray(tablePayload.pairs)) {
+        await upsertPairsForTable(client, createdTable.id, tablePayload.pairs, now);
+      }
+      const pairs = await loadPairsWithPlayers(client, createdTable.id);
+      return { ...createdTable, pairs, hands: [] };
+    });
 
-  publishGameEvent(gameId, { type: 'TABLE_CREATED', payload: { table } });
-  return table;
+    publishGameEvent(gameId, { type: 'TABLE_CREATED', payload: { table } });
+    return table;
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      throw conflictError('Ya existe una mesa con ese número en esta velada.');
+    }
+    throw error;
+  }
 };
 
 export const updatePairScores = async ({ tableId, pair1Id, pair1Score, pair2Id, pair2Score, gamesWonPair1, gamesWonPair2 }) => {
   const result = await withTransaction(async (client) => {
-    const now = nowUTC();
-    const meta = await client.query('SELECT game_id FROM game_tables WHERE id = $1', [tableId]);
-    if (!meta.rows.length) {
-      throw new Error('Mesa no encontrada');
+    if (pair1Id === pair2Id) {
+      throw badRequestError('Las parejas deben ser distintas para actualizar los puntajes.');
     }
+    const now = nowUTC();
+    const tableMeta = await client.query('SELECT game_id FROM game_tables WHERE id = $1 FOR UPDATE', [tableId]);
+    if (!tableMeta.rows.length) {
+      throw notFoundError('Mesa no encontrada');
+    }
+    const { rows: pairRows } = await client.query(
+      'SELECT id FROM game_pairs WHERE id = ANY($1::uuid[]) AND game_table_id = $2 FOR UPDATE',
+      [[pair1Id, pair2Id], tableId],
+    );
+    if (pairRows.length !== 2) {
+      throw badRequestError('Las parejas proporcionadas no pertenecen a la mesa indicada.');
+    }
+
     await client.query('UPDATE game_pairs SET score = $1 WHERE id = $2', [pair1Score, pair1Id]);
     await client.query('UPDATE game_pairs SET score = $1 WHERE id = $2', [pair2Score, pair2Id]);
     await client.query(
@@ -374,7 +412,7 @@ export const updatePairScores = async ({ tableId, pair1Id, pair1Score, pair2Id, 
         pair2_updated_at: now,
         table_updated_at: now,
       },
-      gameId: meta.rows[0].game_id,
+      gameId: tableMeta.rows[0].game_id,
     };
   });
 
@@ -395,36 +433,59 @@ export const updatePairScores = async ({ tableId, pair1Id, pair1Score, pair2Id, 
 };
 
 export const addHandToTable = async (tableId, handPayload) => {
-  const result = await withTransaction(async (client) => {
-    const now = nowUTC();
-    const partida = await createOrGetOpenPartidaForTable(client, tableId);
-    const insertSql = `INSERT INTO game_hands (game_table_id, partida_id, hand_number, pair_1_score, pair_2_score,
-      start_time, end_time, duration_seconds, created_at, updated_at)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)
-      RETURNING *`;
-    const { rows } = await client.query(insertSql, [
+  try {
+    const result = await withTransaction(async (client) => {
+      const now = nowUTC();
+      let lockedGameId;
+      try {
+        lockedGameId = await getGameIdForTable(client, tableId, { lock: true });
+      } catch (error) {
+        throw notFoundError('Mesa no encontrada');
+      }
+
+      const handNumber = await computeNextHandNumber(client, tableId, handPayload.hand_number);
+      const duplicateCheck = await client.query(
+        'SELECT 1 FROM game_hands WHERE game_table_id = $1 AND hand_number = $2 LIMIT 1',
+        [tableId, handNumber],
+      );
+      if (duplicateCheck.rows.length) {
+        throw conflictError('Ya existe una mano con ese número para esta mesa.');
+      }
+
+      const partida = await createOrGetOpenPartidaForTable(client, tableId);
+      const insertSql = `INSERT INTO game_hands (game_table_id, partida_id, hand_number, pair_1_score, pair_2_score,
+        start_time, end_time, duration_seconds, created_at, updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9)
+        RETURNING *`;
+      const { rows } = await client.query(insertSql, [
+        tableId,
+        partida?.id || null,
+        handNumber,
+        handPayload.pair_1_score ?? 0,
+        handPayload.pair_2_score ?? 0,
+        handPayload.start_time ? convertToUTC(handPayload.start_time) : now,
+        handPayload.end_time ? convertToUTC(handPayload.end_time) : null,
+        handPayload.duration_seconds ?? null,
+        now,
+      ]);
+      const hand = rows[0];
+      const gameId = partida?.game_id || lockedGameId;
+      return { hand, gameId };
+    });
+
+    publishGameEvent(result.gameId, {
+      type: 'HAND_ADDED',
       tableId,
-      partida?.id || null,
-      handPayload.hand_number ?? 1,
-      handPayload.pair_1_score ?? 0,
-      handPayload.pair_2_score ?? 0,
-      handPayload.start_time ? convertToUTC(handPayload.start_time) : now,
-      handPayload.end_time ? convertToUTC(handPayload.end_time) : null,
-      handPayload.duration_seconds ?? null,
-      now,
-    ]);
-    const hand = rows[0];
-    const gameId = partida?.game_id || await getGameIdForTable(client, tableId);
-    return { hand, gameId };
-  });
+      payload: { hand: result.hand },
+    });
 
-  publishGameEvent(result.gameId, {
-    type: 'HAND_ADDED',
-    tableId,
-    payload: { hand: result.hand },
-  });
-
-  return result.hand;
+    return result.hand;
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      throw conflictError('Ya existe una mano con ese número para esta mesa.');
+    }
+    throw error;
+  }
 };
 
 export const updateHand = async (handId, updates) => {

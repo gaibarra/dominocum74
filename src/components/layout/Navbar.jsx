@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from "react";
 import { Link, NavLink } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Menu, X, Users, LayoutDashboard, BarChart3, PlusCircle } from "lucide-react";
+import { Menu, X, Users, LayoutDashboard, BarChart3, PlusCircle, Home } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -44,7 +44,8 @@ const Navbar = () => {
   }, []);
 
   const navLinks = [
-    { name: "Dashboard", path: "/", icon: <LayoutDashboard size={20} /> },
+    { name: "Inicio", path: "/", icon: <Home size={20} /> },
+    { name: "Dashboard", path: "/dashboard", icon: <LayoutDashboard size={20} /> },
     { name: "Jugadores", path: "/players", icon: <Users size={20} /> },
     { name: "Nueva Velada", path: "/new-game", icon: <PlusCircle size={20} /> },
     { name: "Estadísticas", path: "/stats", icon: <BarChart3 size={20} /> },
