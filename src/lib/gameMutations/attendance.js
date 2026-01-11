@@ -61,8 +61,8 @@ export const computeAttendanceDurations = (attendance, fallbackEnd) => {
   return map;
 };
 
-export const computePlayingAndBenchMinutes = (attendance, game) => {
-  // For each player: playingMinutes = sum of overlap between their attendance interval and each hand they played; benchMinutes = attendanceMinutes - playingMinutes
+export const computePlayingMinutes = (attendance, game) => {
+  // For cada jugador: playingMinutes = suma de solapes entre su asistencia y las manos jugadas; también seguimos devolviendo attendanceMinutes como referencia.
   // Build fallback end
   const allHands = (game.tables || []).flatMap(t => t.hands || []);
   const fallbackEnd = allHands
@@ -78,7 +78,7 @@ export const computePlayingAndBenchMinutes = (attendance, game) => {
     handsByTable.set(t.id, hands);
   });
 
-  const result = new Map(); // playerId -> { playingMinutes, benchMinutes, attendanceMinutes }
+  const result = new Map(); // playerId -> { playingMinutes, attendanceMinutes }
 
   attendance.forEach(a => {
     const start = toDay(a.check_in_time);
@@ -98,11 +98,8 @@ export const computePlayingAndBenchMinutes = (attendance, game) => {
         if (e.isAfter(s)) playing += e.diff(s, 'minute');
       });
     });
-
-    const bench = Math.max(attMins - playing, 0);
     result.set(a.player_id, {
       playingMinutes: (result.get(a.player_id)?.playingMinutes || 0) + playing,
-      benchMinutes: (result.get(a.player_id)?.benchMinutes || 0) + bench,
       attendanceMinutes: (result.get(a.player_id)?.attendanceMinutes || 0) + attMins,
     });
   });

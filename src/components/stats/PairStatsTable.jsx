@@ -2,6 +2,7 @@ import React from "react";
 import { ArrowUpDown } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { resolvePublicMediaUrl } from "@/lib/mediaStorage";
 import { cn } from "@/lib/utils";
 
 const numberFormatter = new Intl.NumberFormat("es-MX");
@@ -32,7 +33,7 @@ const PairStatsTable = ({ pairStats = [], getPlayerInfo, sortConfig, onSortChang
         <TableHeader>
           <TableRow>
             <TableHead className="w-[50px]">#</TableHead>
-            <TableHead>
+            <TableHead className="whitespace-nowrap">
               <button
                 type="button"
                 className="inline-flex items-center gap-1 text-xs font-medium uppercase tracking-wide text-muted-foreground"
@@ -70,13 +71,13 @@ const PairStatsTable = ({ pairStats = [], getPlayerInfo, sortConfig, onSortChang
                 <TableCell>
                   <div className="flex flex-wrap items-center gap-2">
                     <Avatar className="h-8 w-8">
-                      <AvatarImage src={player1.photo} alt={player1.nickname} />
+                      <AvatarImage src={resolvePublicMediaUrl(player1.photo)} alt={player1.nickname} />
                       <AvatarFallback>{player1.nickname?.[0] || '?'}</AvatarFallback>
                     </Avatar>
                     <span className="font-medium">{player1.nickname || '¿?'}</span>
                     <span className="text-muted-foreground">&</span>
                     <Avatar className="h-8 w-8">
-                      <AvatarImage src={player2.photo} alt={player2.nickname} />
+                      <AvatarImage src={resolvePublicMediaUrl(player2.photo)} alt={player2.nickname} />
                       <AvatarFallback>{player2.nickname?.[0] || '?'}</AvatarFallback>
                     </Avatar>
                     <span className="font-medium">{player2.nickname || '¿?'}</span>

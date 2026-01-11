@@ -1,5 +1,5 @@
 import { query } from '../db/pool.js';
-import { computePlayingAndBenchMinutes } from '../utils/attendance.js';
+import { computePlayingMinutes } from '../utils/attendance.js';
 
 const rowsToMap = (rows, key) => {
   const map = new Map();
@@ -49,7 +49,6 @@ const ensurePlayerStat = (statsMap, playersById, playerId) => {
       handsPlayed: 0,
       minutesPlayed: 0,
       minutesPlaying: 0,
-      minutesBench: 0,
       totalPoints: 0,
       playingSecondsFromHands: 0,
     });
@@ -64,6 +63,10 @@ const ensurePairKey = (playerIds) => {
 };
 
 export const fetchStatsOverview = async () => {
+  // Always start from a clean slate to avoid leaking any accumulator state
+  const emptyTotals = { totalGames: 0, totalHands: 0 };
+  const emptyResponse = { totals: emptyTotals, players: [], pairs: [] };
+
   const [{ rows: players }, { rows: games }] = await Promise.all([
     query('SELECT id, name, nickname, photo FROM players ORDER BY nickname ASC'),
     query('SELECT id, date, summary, location_name, location_details, status, closed_at, created_at, updated_at FROM games ORDER BY date DESC'),
@@ -80,15 +83,13 @@ export const fetchStatsOverview = async () => {
       handsPlayed: 0,
       minutesPlayed: 0,
       minutesPlaying: 0,
-      minutesBench: 0,
       totalPoints: 0,
       pointsPerGame: 0,
       winRate: 0,
     }));
     return {
-      totals: { totalGames: 0, totalHands: 0 },
+      ...emptyResponse,
       players: emptyPlayers,
-      pairs: [],
     };
   }
 
@@ -165,21 +166,32 @@ export const fetchStatsOverview = async () => {
       const hayPartidaEnCurso = !table.partida_finished && handsForTable.length > 0 ? 1 : 0;
       totalPartidas += partidasTerminadas + hayPartidaEnCurso;
 
-      const hasSnapshots = (snapshotsByTable.get(table.id) || []).length > 0;
-      const shouldUseLiveCounters = !hasSnapshots || !table.partida_finished;
+      // Usamos siempre los contadores en vivo (manos + games_won_*),
+      // para mantener consistencia con las cifras por velada y evitar saltos con snapshots.
+      const shouldUseLiveCounters = true;
 
       if (shouldUseLiveCounters) {
         const pair1Players = table.pairs?.[0]?.players?.filter(Boolean) || [];
         const pair2Players = table.pairs?.[1]?.players?.filter(Boolean) || [];
-        const uniquePlayers = Array.from(new Set([...pair1Players, ...pair2Players]));
         const pair1Points = handsForTable.reduce((sum, hand) => sum + toNumber(hand.pair_1_score), 0);
         const pair2Points = handsForTable.reduce((sum, hand) => sum + toNumber(hand.pair_2_score), 0);
         const tableHandSeconds = handsForTable.reduce((sum, hand) => sum + handDurationSeconds(hand), 0);
 
-        uniquePlayers.forEach((playerId) => {
+        // Juegos jugados: contar por cada pareja en la que participa el jugador
+        const partidasJugadasMesa = partidasTerminadas + hayPartidaEnCurso;
+        [pair1Players, pair2Players].forEach((playersInPair, pairIdx) => {
+          playersInPair.forEach((playerId) => {
+            const stat = ensurePlayerStat(playerStats, playersById, playerId);
+            if (!stat) return;
+            stat.gamesPlayed += partidasJugadasMesa;
+          });
+        });
+
+        // Hands/minutos: contar una sola vez por jugador por mesa
+        const playersForHands = Array.from(new Set([...pair1Players, ...pair2Players]));
+        playersForHands.forEach((playerId) => {
           const stat = ensurePlayerStat(playerStats, playersById, playerId);
           if (!stat) return;
-          stat.gamesPlayed += partidasTerminadas + hayPartidaEnCurso;
           stat.handsPlayed += handsForTable.length;
           stat.playingSecondsFromHands += tableHandSeconds;
         });
@@ -222,53 +234,18 @@ export const fetchStatsOverview = async () => {
 
     const attendanceRecords = attendanceByGame.get(game.id) || [];
     if (attendanceRecords.length) {
-      const splitMap = computePlayingAndBenchMinutes(attendanceRecords, game);
+      const splitMap = computePlayingMinutes(attendanceRecords, game);
       splitMap.forEach((value, playerId) => {
         const stat = ensurePlayerStat(playerStats, playersById, playerId);
         if (!stat) return;
         stat.minutesPlayed += value.attendanceMinutes;
         stat.minutesPlaying += value.playingMinutes;
-        stat.minutesBench += value.benchMinutes;
       });
     }
   });
 
   snapshots.forEach((snapshot) => {
-    const pairPlayersList = [snapshot.player1_id, snapshot.player2_id].filter(Boolean);
-    if (!pairPlayersList.length) return;
-    const partidaKey = `${snapshot.game_id}:${snapshot.game_table_id}:${snapshot.partida_index}`;
-    const partidaMeta = partidaMetaByKey.get(partidaKey);
-    const handCount = partidaMeta?.id ? (handsByPartida.get(partidaMeta.id) || []).length : 0;
-
-    pairPlayersList.forEach((playerId) => {
-      const stat = ensurePlayerStat(playerStats, playersById, playerId);
-      if (!stat) return;
-      stat.gamesPlayed += 1;
-      stat.handsPlayed += handCount;
-      stat.totalPoints += toNumber(snapshot.points);
-      if (partidaMeta?.winner_pair_index && partidaMeta.winner_pair_index === snapshot.pair_index) {
-        stat.wins += 1;
-      }
-    });
-
-    const pairKey = ensurePairKey(pairPlayersList);
-    if (pairKey) {
-      if (!pairStats.has(pairKey)) {
-        pairStats.set(pairKey, {
-          key: pairKey,
-          playerIds: pairPlayersList.map(String).sort(),
-          gamesPlayed: 0,
-          wins: 0,
-          totalPoints: 0,
-        });
-      }
-      const entry = pairStats.get(pairKey);
-      entry.gamesPlayed += 1;
-      entry.totalPoints += toNumber(snapshot.points);
-      if (partidaMeta?.winner_pair_index && partidaMeta.winner_pair_index === snapshot.pair_index) {
-        entry.wins += 1;
-      }
-    }
+    // Se omite el uso de snapshots para evitar desalinear los totales globales.
   });
 
   const finalizedPlayerStats = Array.from(playerStats.values()).map((stat) => {
@@ -279,7 +256,6 @@ export const fetchStatsOverview = async () => {
     if (stat.minutesPlayed < stat.minutesPlaying) {
       stat.minutesPlayed = stat.minutesPlaying;
     }
-    stat.minutesBench = Math.max(stat.minutesPlayed - stat.minutesPlaying, 0);
     stat.pointsPerGame = stat.gamesPlayed ? Number((stat.totalPoints / stat.gamesPlayed).toFixed(1)) : 0;
     stat.winRate = stat.gamesPlayed ? Number(((stat.wins / stat.gamesPlayed) * 100).toFixed(1)) : 0;
     delete stat.playingSecondsFromHands;

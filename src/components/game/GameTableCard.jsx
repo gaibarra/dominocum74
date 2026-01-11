@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 // @ts-ignore
 import { Button } from "@/components/ui/button";
 import { Plus, Trophy, Edit3, Clock, Trash2 } from "lucide-react";
+import { computePairTotals } from "@/lib/gameCalculations";
 
 /**
  * @typedef {Object} Hand
@@ -103,33 +104,22 @@ export default function GameTableCard({
   /** @type {any} */ const InputC = Input;
   /** @type {any} */ const LabelC = Label;
   /** @type {any} */ const ButtonC = Button;
-  const target = table.points_to_win_partida || 100;
-  const isFinished =
-    (table.hands || []).reduce(
-      (/** @type {number} */ s, /** @type {Hand} */ h) => s + (h.pair_1_score || 0),
-      0
-    ) >= target ||
-    (table.hands || []).reduce(
-      (/** @type {number} */ s, /** @type {Hand} */ h) => s + (h.pair_2_score || 0),
-      0
-    ) >= target;
-
-  /**
-   * @param {0|1} idx
-   */
-  const calcScore = (idx) =>
-    (table.hands || []).reduce(
-      (/** @type {number} */ sum, /** @type {Hand} */ h) => sum + (idx === 0 ? (h.pair_1_score || 0) : (h.pair_2_score || 0)),
-      0
-    );
+  const { pair1: pair1Total, pair2: pair2Total, target, hands: safeHands } = computePairTotals(table);
+  const pairTotals = [pair1Total, pair2Total];
+  const isFinished = pair1Total >= target || pair2Total >= target;
 
   const scores = currentHandScores || { pair1: "", pair2: "" };
 
   // Auto-sugerir cierre: cuando detectamos que se alcanzó el objetivo y aún no está marcada como finalizada,
-  // disparamos onFinishTable una sola vez para abrir la confirmación.
+  // disparamos onFinishTable una sola vez para abrir la confirmación. Si los puntos vuelven a bajar,
+  // rearmamos el trigger para evitar modales fantasma.
   const promptedRef = React.useRef(false);
   React.useEffect(() => {
-    if (!promptedRef.current && isFinished && !table.partidaFinished && typeof onFinishTable === "function") {
+    if (!isFinished) {
+      promptedRef.current = false;
+      return;
+    }
+    if (!promptedRef.current && !table.partidaFinished && typeof onFinishTable === "function") {
       promptedRef.current = true;
       onFinishTable(table.id);
     }
@@ -170,7 +160,7 @@ export default function GameTableCard({
         "div",
         { className: "grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4" },
         table.pairs.map((/** @type {any} */ pair, /** @type {number} */ idx) => {
-          const total = calcScore(/** @type {0|1} */ (idx));
+          const total = pairTotals[idx] || 0;
           const won = total >= target;
           return React.createElement(
             "div",
@@ -303,7 +293,7 @@ export default function GameTableCard({
         ),
 
       // Historial de Manos
-      (table.hands?.length || 0) > 0 &&
+      safeHands.length > 0 &&
         React.createElement(
           "div",
           { className: "mt-6" },
@@ -315,7 +305,7 @@ export default function GameTableCard({
           React.createElement(
             "div",
             { className: "max-h-48 overflow-y-auto space-y-1 pr-2 rounded-md bg-slate-100 dark:bg-slate-700/50 p-2" },
-            (table.hands || [])
+            safeHands
               .slice()
               .reverse()
               .map((/** @type {Hand} */ hand, /** @type {number} */ revIdx) =>

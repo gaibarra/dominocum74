@@ -137,7 +137,12 @@ export const checkOutPlayer = async (gameId, playerId, timestamp = null) => with
   return rows[0];
 });
 
-const computeFallbackCheckout = async (client, gameId) => {
+// Obtiene un fallback de salida específico por jugador:
+// 1) Última mano en la que participó el jugador.
+// 2) closed_at de la velada.
+// 3) updated_at de la velada.
+// 4) date de la velada.
+const computeFallbackCheckoutForPlayer = async (client, gameId, playerId) => {
   const gameRow = await fetchGameMeta(client, gameId, { forUpdate: true });
   if (!gameRow) return null;
 
@@ -145,8 +150,10 @@ const computeFallbackCheckout = async (client, gameId) => {
     `SELECT MAX(COALESCE(h.end_time, h.updated_at, h.created_at)) AS last_hand
      FROM game_hands h
      JOIN game_tables t ON t.id = h.game_table_id
-     WHERE t.game_id = $1`,
-    [gameId],
+     JOIN game_pairs gp ON gp.game_table_id = t.id
+     JOIN game_pair_players gpp ON gpp.game_pair_id = gp.id
+     WHERE t.game_id = $1 AND gpp.player_id = $2`,
+    [gameId, playerId],
   )).rows[0];
 
   const fallback = lastHandRow?.last_hand
@@ -158,18 +165,24 @@ const computeFallbackCheckout = async (client, gameId) => {
 };
 
 const runBackfillMissingCheckouts = async (client, gameId) => {
-  const pending = await client.query('SELECT id FROM game_attendance WHERE game_id = $1 AND check_out_time IS NULL', [gameId]);
+  const pending = await client.query('SELECT id, player_id FROM game_attendance WHERE game_id = $1 AND check_out_time IS NULL', [gameId]);
   if (!pending.rows.length) return { updated: 0 };
 
-  const fallback = await computeFallbackCheckout(client, gameId);
-  if (!fallback) return { updated: 0 };
-
   const now = nowUTC();
-  await client.query(
-    'UPDATE game_attendance SET check_out_time = $1, updated_at = $2 WHERE game_id = $3 AND check_out_time IS NULL',
-    [fallback, now, gameId],
-  );
-  return { updated: pending.rows.length };
+  let updated = 0;
+
+  // Procesar uno a uno para usar la última mano en la que participó cada jugador.
+  for (const row of pending.rows) {
+    const fallback = await computeFallbackCheckoutForPlayer(client, gameId, row.player_id);
+    if (!fallback) continue;
+    await client.query(
+      'UPDATE game_attendance SET check_out_time = $1, updated_at = $2 WHERE id = $3 AND check_out_time IS NULL',
+      [fallback, now, row.id],
+    );
+    updated += 1;
+  }
+
+  return { updated };
 };
 
 export const backfillMissingCheckouts = async (gameId) => withTransaction(async (client) => runBackfillMissingCheckouts(client, gameId));

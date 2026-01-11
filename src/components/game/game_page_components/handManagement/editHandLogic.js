@@ -1,5 +1,6 @@
 import { updateHandInTableDB } from '@/lib/storage';
 import { convertToUTC } from '@/lib/dateUtils';
+import { computePairTotals } from '@/lib/gameCalculations';
 import { validateAndParseScore, validateHandScores } from './scoreUtils';
 
 export const processEditHand = async (game, currentEditingTableId, editedHandData, fetchGameAndPlayersData, toast) => {
@@ -25,16 +26,14 @@ export const processEditHand = async (game, currentEditingTableId, editedHandDat
     }
     
     currentTable.hands[handIndex] = { ...currentTable.hands[handIndex], pair_1_score: p1, pair_2_score: p2, updated_at: convertToUTC() };
-    
-    currentTable.pairs[0].score = 0;
-    currentTable.pairs[1].score = 0;
-    currentTable.hands.forEach(h => {
-      currentTable.pairs[0].score += (h.pair_1_score || 0);
-      currentTable.pairs[1].score += (h.pair_2_score || 0);
-    });
 
-    if (currentTable.pairs[0].score >= (game.points_to_win_partida || 100) || currentTable.pairs[1].score >= (game.points_to_win_partida || 100)) {
-        if (!currentTable.hands[handIndex].end_time) {
+    const totals = computePairTotals(currentTable);
+    currentTable.hands = totals.hands;
+    currentTable.pairs[0].score = totals.pair1;
+    currentTable.pairs[1].score = totals.pair2;
+
+    if (totals.pair1 >= totals.target || totals.pair2 >= totals.target) {
+      if (!currentTable.hands[handIndex].end_time) {
             const now = convertToUTC();
             currentTable.hands[handIndex].end_time = now;
             currentTable.hands[handIndex].duration_seconds = Math.floor((new Date(now).getTime() - new Date(currentTable.hands[handIndex].start_time).getTime()) / 1000);

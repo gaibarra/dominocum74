@@ -3,6 +3,7 @@ import React, { useMemo, useState, Suspense, lazy, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
 const GameTableCard = lazy(() => import("./GameTableCard"));
+import { computePairTotals } from "@/lib/gameCalculations";
 
 // Hoisted component to keep identity stable across renders and avoid remounting (which causes input blur)
 const TableCardMountNotifier = (props) => {
@@ -84,10 +85,40 @@ export default function GameTablesDisplay({
 
   const [activeTab, setActiveTab] = useState(() => filteredTables[0]?.id ?? null);
   const [isTabLoading, setIsTabLoading] = useState(false);
-  /** @type {[{table: Table}|null, React.Dispatch<React.SetStateAction<{table: Table}|null>>]} */
+  /** @type {[{tableId: string|number}|null, React.Dispatch<React.SetStateAction<{tableId: string|number}|null>>]} */
   // @ts-ignore
-  const [confirmData, setConfirmData] = useState(null); // { table }
+  const [confirmData, setConfirmData] = useState(null); // { tableId }
   const [cancelData, setCancelData] = useState(null);
+
+  const confirmTable = useMemo(() => {
+    if (!confirmData) return null;
+    return tables.find((/** @type {Table} */ t) => t.id === confirmData.tableId) || null;
+  }, [confirmData, tables]);
+
+  const confirmTotals = useMemo(() => {
+    if (!confirmTable) return null;
+    return computePairTotals(confirmTable);
+  }, [confirmTable]);
+
+  const confirmEligible = confirmTotals
+    ? confirmTotals.pair1 >= confirmTotals.target || confirmTotals.pair2 >= confirmTotals.target
+    : false;
+
+  useEffect(() => {
+    if (confirmData && confirmTotals && !confirmEligible) {
+      setConfirmData(null);
+    }
+  }, [confirmData, confirmTotals, confirmEligible]);
+
+  const requestFinish = (tableId) => {
+    const t = tables.find((/** @type {Table} */ x) => x.id === tableId);
+    if (!t) return;
+    const totals = computePairTotals(t);
+    if (totals.pair1 < totals.target && totals.pair2 < totals.target) {
+      return;
+    }
+    setConfirmData({ tableId: t.id });
+  };
 
   useEffect(() => {
     // Si hay una mesa seleccionada desde arriba y está en el subconjunto filtrado, enfocarla
@@ -145,18 +176,12 @@ export default function GameTablesDisplay({
     );
   }
 
-  /**
-   * @param {string|number} tableId
-   */
-  const requestFinish = (tableId) => {
-    const t = tables.find((/** @type {Table} */ x) => x.id === tableId);
-    if (!t) return;
-    setConfirmData({ table: t });
-  };
-
   const confirmFinish = () => {
-    if (!confirmData?.table) return;
-    onFinishTable(confirmData.table.id);
+    if (!confirmData?.tableId) {
+      setConfirmData(null);
+      return;
+    }
+    onFinishTable(confirmData.tableId);
     setConfirmData(null);
   };
 
@@ -246,7 +271,7 @@ export default function GameTablesDisplay({
     ),
 
     // Modal de confirmación de cierre
-    confirmData &&
+    confirmData && confirmTable && confirmTotals && confirmEligible &&
       React.createElement(
         "div",
         { className: "fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" },
@@ -256,7 +281,7 @@ export default function GameTablesDisplay({
           React.createElement(
             "h3",
             { className: "text-lg font-semibold mb-2" },
-            `Confirmar cierre de Partida (Mesa ${confirmData.table.table_number})`
+            `Confirmar cierre de Partida (Mesa ${confirmTable.table_number})`
           ),
           React.createElement(
             "p",
@@ -273,10 +298,7 @@ export default function GameTablesDisplay({
               React.createElement(
                 "strong",
                 null,
-                (confirmData.table.hands || []).reduce(
-                  (/** @type {number} */ s, /** @type {Hand} */ h) => s + (h.pair_1_score || 0),
-                  0
-                )
+                confirmTotals.pair1
               )
             ),
             React.createElement(
@@ -286,19 +308,16 @@ export default function GameTablesDisplay({
               React.createElement(
                 "strong",
                 null,
-                (confirmData.table.hands || []).reduce(
-                  (/** @type {number} */ s, /** @type {Hand} */ h) => s + (h.pair_2_score || 0),
-                  0
-                )
+                confirmTotals.pair2
               )
             ),
-            confirmData.table.hands?.length > 0 &&
+            confirmTotals.hands?.length > 0 &&
               React.createElement(
                 "div",
                 { className: "mt-2" },
                 React.createElement("div", { className: "font-medium" }, "Última Mano"),
                 (() => {
-                  const h = confirmData.table.hands[confirmData.table.hands.length - 1];
+                  const h = confirmTotals.hands[confirmTotals.hands.length - 1];
                   return React.createElement(
                     "div",
                     { className: "flex justify-between text-xs" },

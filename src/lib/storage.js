@@ -13,7 +13,7 @@ import {
   cancelPendingTableDB
 } from './gameMutations/index';
 import { getAttendanceByGame, checkInPlayer, checkOutPlayer, backfillMissingCheckoutsForGame } from './gameMutations/attendance';
-export { computePlayingAndBenchMinutes } from './gameMutations/attendance';
+export { computePlayingMinutes } from './gameMutations/attendance';
 
 export {
   getPlayers,

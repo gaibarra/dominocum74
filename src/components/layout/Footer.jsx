@@ -14,7 +14,7 @@ const Footer = () => {
     >
       <div className="container mx-auto px-4 text-center">
         <div className="flex justify-center items-center space-x-2 mb-3">
-          <img-replace src={schoolLogoUrl} alt="Escudo CUM" className="h-8 w-auto"/>
+          <img src={schoolLogoUrl} alt="Escudo CUM" className="h-8 w-auto" />
           <span className="font-semibold text-slate-100">Dominó CUM 74</span>
         </div>
         <p className="text-sm">

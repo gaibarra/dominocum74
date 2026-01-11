@@ -4,6 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { useToast } from "@/components/ui/use-toast";
 import { Loader2, AlertTriangle, RefreshCw, PlusCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import dayjs from "dayjs";
 import { useGameData } from "@/components/game/game_page_components/useGameData";
 import { useTableManagement } from "@/components/game/game_page_components/useTableManagement";
 import { useHandManagement } from "@/components/game/game_page_components/useHandManagement";
@@ -11,8 +12,12 @@ import { useAnecdotes } from "@/components/game/game_page_components/useAnecdote
 import { useAttendance } from "@/components/game/game_page_components/useAttendance";
 import { useGameRealtime } from "@/components/game/game_page_components/useGameRealtime";
 import { normalizeHand, normalizeTable, normalizeAnecdote } from "@/lib/normalizers";
+import { computePairTotals } from "@/lib/gameCalculations";
+import { formatDateForDisplay } from "@/lib/dateUtils";
+import { useActiveVelada } from "@/context/ActiveVeladaContext";
 // @ts-ignore
 import AttendancePanel from "@/components/game/AttendancePanel";
+// @ts-ignore
 import { finalizeTablePartidaDB, cancelPendingTableDB, checkInPlayer } from "@/lib/storage";
 
 // @ts-ignore
@@ -69,11 +74,6 @@ const GamePage = () => {
     fetchGameAndPlayersData,
   } = useGameData();
 
-  const [searchParams] = useSearchParams();
-  const shouldFocusAttendance = searchParams.get("focus") === "attendance";
-  const [highlightAttendance, setHighlightAttendance] = useState(false);
-  const hasAutoFocusedAttendance = React.useRef(false);
-
   const {
     isAddTableDialogOpen,
     setIsAddTableDialogOpen,
@@ -119,6 +119,39 @@ const GamePage = () => {
   const requestFullRefresh = React.useCallback(() => {
     fetchGameAndPlayersData();
   }, [fetchGameAndPlayersData]);
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const shouldFocusAttendance = searchParams.get("focus") === "attendance";
+  const [highlightAttendance, setHighlightAttendance] = useState(false);
+  const hasAutoFocusedAttendance = React.useRef(false);
+  const attendanceScrollTimers = React.useRef({ scroll: null, reset: null });
+
+  const registerParam = searchParams.get("register");
+  const [autoRegisterKey, setAutoRegisterKey] = useState(null);
+
+  React.useEffect(() => {
+    if (registerParam !== "auto") return;
+    setAutoRegisterKey(`${Date.now()}`);
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete("register");
+    setSearchParams(next, { replace: true });
+  }, [registerParam, searchParams, setSearchParams]);
+
+  const focusAttendancePanel = useCallback(() => {
+    if (attendanceScrollTimers.current.scroll) {
+      clearTimeout(attendanceScrollTimers.current.scroll);
+    }
+    if (attendanceScrollTimers.current.reset) {
+      clearTimeout(attendanceScrollTimers.current.reset);
+    }
+    setHighlightAttendance(true);
+    attendanceScrollTimers.current.scroll = setTimeout(() => {
+      document?.getElementById("attendance")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 100);
+    attendanceScrollTimers.current.reset = setTimeout(() => {
+      setHighlightAttendance(false);
+    }, 2400);
+  }, []);
 
   const handleRealtimeEvent = React.useCallback((event) => {
     if (!event?.type) return;
@@ -283,16 +316,16 @@ const GamePage = () => {
     if (!shouldFocusAttendance || hasAutoFocusedAttendance.current) return;
     if (isLoading || !game?.id) return;
     hasAutoFocusedAttendance.current = true;
-    setHighlightAttendance(true);
-    const scrollTimer = setTimeout(() => {
-      document?.getElementById("attendance")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 120);
-    const resetTimer = setTimeout(() => setHighlightAttendance(false), 2400);
+    focusAttendancePanel();
     return () => {
-      clearTimeout(scrollTimer);
-      clearTimeout(resetTimer);
+      if (attendanceScrollTimers.current.scroll) {
+        clearTimeout(attendanceScrollTimers.current.scroll);
+      }
+      if (attendanceScrollTimers.current.reset) {
+        clearTimeout(attendanceScrollTimers.current.reset);
+      }
     };
-  }, [shouldFocusAttendance, isLoading, game?.id]);
+  }, [shouldFocusAttendance, isLoading, game?.id, focusAttendancePanel]);
 
   // controla vista de mesas activas vs finalizadas
   const [showFinishedTables, setShowFinishedTables] = useState(false);
@@ -335,17 +368,104 @@ const GamePage = () => {
   }, [attendance]);
   const benchCount = Array.isArray(benchPlayers) ? benchPlayers.length : 0;
 
+  const { setSummary: setActiveVeladaSummary } = useActiveVelada() || {};
+
+  React.useEffect(() => {
+    if (!setActiveVeladaSummary) return;
+    if (!game) {
+      setActiveVeladaSummary(null);
+      return;
+    }
+
+    setActiveVeladaSummary({
+      id: game.id,
+      title: `Velada del ${formatDateForDisplay(game.date)}`,
+      status: game.status || "Sin estado",
+      location: game.locationName || game.locationDetails || "Ubicación pendiente",
+      present: presentCount,
+      bench: benchCount,
+    });
+  }, [benchCount, game, presentCount, setActiveVeladaSummary]);
+
+  const tableProgress = useMemo(() => {
+    const result = { active: 0, finished: 0, hands: 0, lastHand: null };
+    (game?.tables || []).forEach((table) => {
+      if (table?.partidaFinished) {
+        result.finished += 1;
+      } else {
+        result.active += 1;
+      }
+      (table?.hands || []).forEach((hand) => {
+        result.hands += 1;
+        const timestamp = hand?.end_time || hand?.updated_at || hand?.created_at;
+        if (!timestamp) return;
+        const candidate = dayjs(timestamp);
+        if (!result.lastHand || candidate.isAfter(result.lastHand)) {
+          result.lastHand = candidate;
+        }
+      });
+    });
+    return result;
+  }, [game?.tables]);
+
+  const lastHandAgo = useMemo(() => {
+    if (!tableProgress.lastHand) return null;
+    const minutes = Math.max(dayjs().diff(tableProgress.lastHand, 'minute'), 0);
+    if (minutes < 1) return 'menos de un minuto';
+    if (minutes < 60) return `${minutes} min`;
+    const hours = Math.floor(minutes / 60);
+    const remaining = minutes % 60;
+    return `${hours}h ${remaining}m`;
+  }, [tableProgress.lastHand]);
+
+  const totalPlayers = Object.keys(playersData || {}).length;
+  const targetTables = Math.max(1, Math.ceil(Math.max(presentCount, 0) / 4)) || 1;
+
+  const controlMetrics = useMemo(() => {
+    const alertMessage = presentCount >= 4 && tableProgress.active === 0
+      ? 'Hay jugadores disponibles sin mesa activa. Abre una mesa para arrancar la velada.'
+      : benchCount < 4 && tableProgress.active > 0
+      ? 'La banca es reducida; rota jugadores para mantener el ritmo de juego.'
+      : null;
+
+    const nextClosing = game?.status === 'Finalizada'
+      ? 'Velada cerrada. Revisa estadísticas y comparte resultados.'
+      : 'Finaliza la velada cuando no queden mesas en juego.';
+
+    return {
+      presentCount,
+      benchCount,
+      totalPlayers,
+      activeTables: tableProgress.active,
+      finishedTables: tableProgress.finished,
+      targetTables,
+      handsLogged: tableProgress.hands,
+      lastHandAt: lastHandAgo,
+      alert: alertMessage,
+      nextClosing,
+    };
+  }, [benchCount, game?.status, lastHandAgo, presentCount, tableProgress.active, tableProgress.finished, tableProgress.hands, targetTables, totalPlayers]);
+
   // marca una mesa como finalizada (persistente): incrementa contador y libera jugadores a Banca
   const handleFinishTable = useCallback(async (tableId) => {
     const table = game?.tables?.find((/** @type {any} */ t) => t.id === tableId);
     if (!table || table.partidaFinished) return;
-    const p1 = (table.hands||[]).reduce((s, h) => s + (h.pair_1_score || 0), 0);
-    const p2 = (table.hands||[]).reduce((s, h) => s + (h.pair_2_score || 0), 0);
-    const toWin = table.points_to_win_partida || 100;
-    let inc1 = 0, inc2 = 0;
-    if (p1 >= toWin || p2 >= toWin) {
-      if (p1 > p2) inc1 = 1; else if (p2 > p1) inc2 = 1;
+    const totals = computePairTotals(table);
+    const p1 = totals.pair1;
+    const p2 = totals.pair2;
+    const toWin = totals.target;
+    if (p1 < toWin && p2 < toWin) {
+      toast({
+        title: 'No puedes cerrar todavía',
+        description: 'Ninguna pareja ha alcanzado la meta de puntos. Revisa la última mano antes de confirmar.',
+        variant: 'destructive'
+      });
+      return;
     }
+    let inc1 = 0;
+    let inc2 = 0;
+    if (p1 > p2) inc1 = 1;
+    else if (p2 > p1) inc2 = 1;
     try {
       const updated = await finalizeTablePartidaDB(tableId, { incrementPair1: inc1, incrementPair2: inc2 });
       setGame((prev) => ({
@@ -456,6 +576,55 @@ const GamePage = () => {
     handleOpenAddTableDialog();
   }, [benchPlayers, handleOpenAddTableDialog, toast]);
 
+  const controlSteps = useMemo(() => {
+    return [
+      {
+        index: '01',
+        title: 'Asistencia',
+        subtitle: `Presentes: ${presentCount}`,
+        description: presentCount >= 4
+          ? 'Listos para armar mesas con la banca actual.'
+          : 'Registra al menos 4 jugadores para iniciar la velada.',
+        status: presentCount >= 4 ? 'done' : presentCount > 0 ? 'progress' : 'pending',
+        action: { label: 'Ir a asistencia', onClick: focusAttendancePanel },
+      },
+      {
+        index: '02',
+        title: 'Mesas activas',
+        subtitle: `En juego: ${tableProgress.active}`,
+        description: tableProgress.active > 0
+          ? 'Gestiona puntajes y asegura rotaciones cuando sea necesario.'
+          : benchCount >= 4
+          ? 'Crea la primera mesa con los jugadores libres.'
+          : 'Espera a que lleguen más jugadores para abrir mesas.',
+        status: tableProgress.active > 0 ? 'done' : benchCount >= 4 ? 'progress' : 'pending',
+        action: { label: 'Crear mesa', onClick: handleGuardedOpenAddTable },
+      },
+      {
+        index: '03',
+        title: 'Bitácora de manos',
+        subtitle: `Manos registradas: ${tableProgress.hands}`,
+        description: tableProgress.hands > 0
+          ? 'Continúa registrando para mantener la estadística viva.'
+          : 'Aún no se ha documentado ninguna mano.',
+        status: tableProgress.hands > 0 ? 'done' : tableProgress.active > 0 ? 'progress' : 'pending',
+      },
+      {
+        index: '04',
+        title: 'Cierre de velada',
+        subtitle: game?.status === 'Finalizada' ? 'Velada finalizada' : 'Velada en curso',
+        description: game?.status === 'Finalizada'
+          ? 'Todos los registros han sido cerrados correctamente.'
+          : 'Cuando todas las mesas terminen, finaliza la velada desde la cabecera.',
+        status: game?.status === 'Finalizada'
+          ? 'done'
+          : tableProgress.active === 0 && (tableProgress.finished > 0 || presentCount > 0)
+          ? 'progress'
+          : 'pending',
+      },
+    ];
+  }, [benchCount, focusAttendancePanel, game?.status, handleGuardedOpenAddTable, presentCount, tableProgress.active, tableProgress.finished, tableProgress.hands]);
+
   if (isLoading) {
     return React.createElement(
       "div",
@@ -549,13 +718,14 @@ const GamePage = () => {
           onCheckIn,
           onCheckOut,
           onBackfillNextDay,
-          selectedPlayersInGame
+          selectedPlayersInGame,
+          autoOpenSelectKey: autoRegisterKey
         })
       ),
 
       React.createElement(
         "div",
-        { className: "my-8 p-6 bg-card/80 backdrop-blur-sm shadow-xl rounded-xl border border-border/50" },
+        { id: "tables-section", className: "my-8 p-6 bg-card/80 backdrop-blur-sm shadow-xl rounded-xl border border-border/50" },
         React.createElement("h2", { className: "text-2xl font-semibold text-foreground mb-4" }, "Mesas de Juego"),
         React.createElement(
           Suspense,
@@ -593,19 +763,19 @@ const GamePage = () => {
       )
     ),
 
-    game.status === "En curso" &&
+    game && game.status !== "Finalizada" &&
       React.createElement(
         "button",
         {
           type: "button",
           onClick: handleGuardedOpenAddTable,
-          className: "fixed top-24 right-4 sm:right-6 z-40 inline-flex items-center gap-2 rounded-full bg-rose-500 px-5 py-3 text-white shadow-xl shadow-rose-500/30 transition hover:-translate-y-1 hover:bg-rose-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-200",
+          className: "fixed bottom-6 right-4 sm:right-6 z-40 inline-flex items-center gap-2 rounded-full bg-rose-500 px-5 py-3 text-white shadow-xl shadow-rose-500/30 transition hover:-translate-y-1 hover:bg-rose-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-200",
           title: benchCount < 4
             ? "Necesitas al menos 4 jugadores libres en banca"
             : "Crear una nueva mesa"
         },
         React.createElement(PlusCircle, { className: "h-5 w-5" }),
-        React.createElement("span", { className: "text-sm font-semibold tracking-wide uppercase" }, "Agregar mesa")
+        React.createElement("span", { className: "text-sm font-semibold tracking-wide uppercase" }, "Crear mesa")
       ),
 
     React.createElement(

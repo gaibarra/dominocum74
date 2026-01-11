@@ -1,7 +1,8 @@
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import { formatDateForDisplay } from './dateUtils';
-import { getPartidaSnapshotsByGame } from './gameMutations/partidaSnapshots';
+import { computePairTotals } from './gameCalculations';
+import { buildGameControlFigures } from './integrity';
 
 const ANECDOTE_TYPE_LABELS = {
   text: 'Texto',
@@ -15,6 +16,7 @@ const CARD_GAP = 8;
 const IMAGE_GALLERY_COLUMNS = 3;
 const IMAGE_GALLERY_GAP = 6;
 const IMAGE_GALLERY_HEIGHT = 60;
+const numberFormatter = new Intl.NumberFormat('es-MX');
 
 const VIDEO_PLACEHOLDER_SVG = `
 <svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">
@@ -183,11 +185,14 @@ const getVideoThumbnailDataUrl = async (url) => {
   return placeholder;
 };
 
-export const generateGameSummaryPDF = async (game, playersList) => {
+export const generateGameSummaryPDF = async (game, playersList, options = {}) => {
   if (!game || !playersList || !Array.isArray(playersList)) {
     console.error("Invalid game data or playersList for PDF generation.");
     throw new Error("Datos inválidos para generar PDF.");
   }
+
+  const attendanceRecords = Array.isArray(options?.attendance) ? options.attendance : [];
+  const controlFigures = buildGameControlFigures(game, attendanceRecords);
 
   const doc = new jsPDF();
   const pageHeight = doc.internal.pageSize.height;
@@ -258,6 +263,15 @@ export const generateGameSummaryPDF = async (game, playersList) => {
 
   addPageHeader();
 
+  const formatControlValue = (value, unit) => {
+    if (value === null || value === undefined || value === '') return '—';
+    if (typeof value === 'number') {
+      const formatted = numberFormatter.format(Math.round(value));
+      return unit ? `${formatted} ${unit}` : formatted;
+    }
+    return String(value);
+  };
+
   const getPlayerNickname = (playerId) => {
     if (playerId === null || playerId === undefined) return 'Desconocido';
     const player = playersList.find(p => String(p.id) === String(playerId));
@@ -296,6 +310,38 @@ export const generateGameSummaryPDF = async (game, playersList) => {
     doc.setTextColor(48, 55, 65);
   }
 
+  if (controlFigures) {
+    const controlRows = [
+      { label: 'Mesas registradas', value: controlFigures.totalTables },
+      { label: 'Mesas finalizadas', value: controlFigures.finishedTables },
+      { label: 'Mesas activas', value: controlFigures.activeTables },
+      { label: 'Mesas canceladas', value: controlFigures.cancelledTables },
+      { label: 'Manos registradas', value: controlFigures.totalHands },
+      { label: 'Partidas declaradas', value: controlFigures.partidasRegistradas },
+      { label: 'Jugadores únicos', value: controlFigures.uniquePlayers },
+      { label: 'Puntos registrados', value: controlFigures.totalPoints },
+      { label: 'Código de control', value: controlFigures.controlCode },
+    ];
+    const cardHeight = 18 + (controlRows.length * 6);
+    ensureSpace(cardHeight + CARD_GAP + 6);
+    doc.setFillColor(249, 250, 255);
+    doc.setDrawColor(215, 225, 245);
+    doc.roundedRect(margin, yPos, pageWidth - margin * 2, cardHeight, 4, 4, 'FD');
+    doc.setFontSize(11);
+    doc.setTextColor(25, 42, 86);
+    doc.text('Cifras de control', margin + 4, yPos + 6);
+    doc.setFontSize(9.5);
+    doc.setTextColor(60, 68, 92);
+    let rowY = yPos + 12;
+    controlRows.forEach(({ label, value, unit }) => {
+      doc.text(label, margin + 4, rowY);
+      doc.text(formatControlValue(value, unit), pageWidth - margin - 4, rowY, { align: 'right' });
+      rowY += 6;
+    });
+    yPos += cardHeight + CARD_GAP;
+    doc.setTextColor(48, 55, 65);
+  }
+
   const gamePlayersStats = {};
   playersList.forEach(p => {
     gamePlayersStats[p.id] = {
@@ -319,20 +365,21 @@ export const generateGameSummaryPDF = async (game, playersList) => {
         return;
       }
 
-      totalHandsInVelada += table.hands.length;
+      const { hands: safeHands, pair1: safePair1, pair2: safePair2 } = computePairTotals(table);
+      totalHandsInVelada += safeHands.length;
       const playersInThisTable = new Set();
 
       // Calcular puntos y partidas ganadas por pareja desde las manos
       const pairPoints = {
-        0: table.hands.reduce((sum, h) => sum + (h.pair_1_score || 0), 0),
-        1: table.hands.reduce((sum, h) => sum + (h.pair_2_score || 0), 0),
+        0: safePair1,
+        1: safePair2,
       };
       const pairGamesWon = {
         0: table.games_won_pair1 || 0,
         1: table.games_won_pair2 || 0,
       };
       const pairHandsWon = { 0: 0, 1: 0 };
-      table.hands.forEach(hand => {
+      safeHands.forEach(hand => {
         const p1 = hand?.pair_1_score || 0;
         const p2 = hand?.pair_2_score || 0;
         if (p1 > p2) pairHandsWon[0] += 1;
@@ -343,7 +390,7 @@ export const generateGameSummaryPDF = async (game, playersList) => {
       const pair2GamesWon = table.games_won_pair2 || 0;
       const partidasTerminadas = pair1GamesWon + pair2GamesWon;
       const isTableFinished = !!(table.partidaFinished ?? table.partida_finished);
-      const hayPartidaEnCurso = !isTableFinished && table.hands.length > 0 ? 1 : 0;
+      const hayPartidaEnCurso = !isTableFinished && safeHands.length > 0 ? 1 : 0;
       const partidasJugadasMesa = partidasTerminadas + hayPartidaEnCurso;
 
       table.pairs.forEach((pair, pairIndex) => {
@@ -366,7 +413,7 @@ export const generateGameSummaryPDF = async (game, playersList) => {
       playersInThisTable.forEach(pId => {
         const statsEntry = ensurePlayerStatsEntry(pId);
         if (statsEntry) {
-          statsEntry.handsPlayed += table.hands.length;
+          statsEntry.handsPlayed += safeHands.length;
         }
       });
       
@@ -393,54 +440,7 @@ export const generateGameSummaryPDF = async (game, playersList) => {
     });
   }
 
-  // Integrar puntos históricos desde snapshots de partidas cerradas en esta velada
-  try {
-    const snaps = await getPartidaSnapshotsByGame(game.id);
-    // Mapa extra de puntos por pareja y jugador
-    const extraPairPoints = new Map(); // key: 'id1-id2' -> pts
-    const extraPlayerPoints = new Map(); // playerId -> pts
-
-    snaps.forEach(row => {
-      const pts = row.points || 0;
-      const p1 = row.player1_id; const p2 = row.player2_id;
-      // Sumar a jugadores
-      [p1, p2].forEach(pid => {
-        if (pid === null || pid === undefined) return;
-        extraPlayerPoints.set(pid, (extraPlayerPoints.get(pid) || 0) + pts);
-      });
-      // Sumar a pareja
-      if (p1 !== null && p1 !== undefined && p2 !== null && p2 !== undefined) {
-        const key = [String(p1), String(p2)].sort((a, b) => a.localeCompare(b)).join('-');
-        extraPairPoints.set(key, (extraPairPoints.get(key) || 0) + pts);
-      }
-    });
-
-    // Aplicar a jugadores
-    extraPlayerPoints.forEach((pts, pid) => {
-      const statsEntry = ensurePlayerStatsEntry(pid);
-      if (statsEntry) {
-        statsEntry.pointsAccumulated += pts;
-      }
-    });
-
-    // Aplicar a parejas (crear entrada si no existe)
-    extraPairPoints.forEach((pts, key) => {
-      if (!gamePairStatsMap.has(key)) {
-        const [id1, id2] = key.split('-');
-        const display = [id1, id2].map(id => {
-          const pl = playersList.find(p => String(p.id) === String(id));
-          return pl ? pl.nickname : 'Desconocido';
-        }).join(' y ');
-        gamePairStatsMap.set(key, { playersDisplay: display, partidasPlayed: 0, totalPointsInPartidas: 0, totalGamesWonInTables: 0, totalHandsWon: 0 });
-      }
-      const stats = gamePairStatsMap.get(key);
-      stats.totalPointsInPartidas += pts;
-    });
-  } catch (e) {
-    console.warn('Snapshots no disponibles para PDF (se omiten puntos históricos):', e?.message || e);
-  }
-
-  // Snapshots eliminados: los puntos históricos ya no se agregan
+  // Snapshots eliminados: no se agregan puntos históricos para evitar duplicar totales
 
 
   drawSectionTitle('Estadísticas de la Velada');

@@ -2,39 +2,70 @@ import dayjs from 'dayjs';
 
 const toDay = (ts) => (ts ? dayjs(ts) : null);
 
-const getFallbackEnd = (game) => {
+// Guardrails to prevent runaway durations when there is no check-out
+const MAX_GAME_DURATION_MINUTES = 12 * 60; // cap any single velada to 12h for stats
+
+const buildGameWindow = (game) => {
   const allHands = (game?.tables || []).flatMap((table) => table?.hands || []);
-  const candidates = allHands
+  const startCandidates = allHands
+    .map((hand) => hand.start_time || hand.created_at)
+    .filter(Boolean)
+    .sort();
+  const endCandidates = allHands
     .map((hand) => hand.end_time || hand.updated_at || hand.created_at)
     .filter(Boolean)
     .sort();
-  if (candidates.length) {
-    return candidates[candidates.length - 1];
+
+  const fallbackStartTs = game?.date || game?.created_at || game?.updated_at;
+  const fallbackEndTs = game?.closed_at || game?.updated_at || fallbackStartTs || new Date().toISOString();
+
+  const windowStart = toDay(startCandidates[0] || fallbackStartTs) || dayjs();
+  let windowEnd = toDay(endCandidates[endCandidates.length - 1] || fallbackEndTs) || windowStart;
+
+  if (!windowEnd.isAfter(windowStart)) {
+    windowEnd = windowStart.add(4, 'hour');
   }
-  return game?.closed_at || game?.updated_at || game?.date || new Date().toISOString();
+
+  const maxEnd = windowStart.add(MAX_GAME_DURATION_MINUTES, 'minute');
+  if (windowEnd.isAfter(maxEnd)) {
+    windowEnd = maxEnd;
+  }
+
+  return { windowStart, windowEnd };
 };
 
-export const computePlayingAndBenchMinutes = (attendance = [], game = {}) => {
-  const fallbackEnd = getFallbackEnd(game);
-  const fallbackEndDay = toDay(fallbackEnd);
+export const computePlayingMinutes = (attendance = [], game = {}) => {
+  const { windowStart, windowEnd } = buildGameWindow(game);
   const result = new Map();
   const handsByTable = new Map();
 
   (game?.tables || []).forEach((table) => {
     const hands = (table?.hands || [])
-      .map((hand) => ({
-        start: toDay(hand.start_time),
-        end: toDay(hand.end_time) || fallbackEndDay,
-      }))
+      .map((hand) => {
+        const start = toDay(hand.start_time) || windowStart;
+        const end = toDay(hand.end_time) || windowEnd;
+        const clampedStart = start.isBefore(windowStart) ? windowStart : start;
+        const clampedEnd = end.isAfter(windowEnd) ? windowEnd : end;
+        return { start: clampedStart, end: clampedEnd };
+      })
       .filter((interval) => interval.start && interval.end && interval.end.isAfter(interval.start));
     handsByTable.set(table.id, hands);
   });
 
   attendance.forEach((record) => {
-    const start = toDay(record.check_in_time);
-    const end = toDay(record.check_out_time) || fallbackEndDay;
+    let start = toDay(record.check_in_time);
+    let end = toDay(record.check_out_time);
+
+    // Clamp to the game window and provide sane fallback when no check-out exists
+    if (!start || start.isBefore(windowStart)) start = windowStart;
+    if (!end) end = windowEnd;
+    if (end.isAfter(windowEnd)) end = windowEnd;
     if (!start || !end || !end.isAfter(start)) return;
-    const attendanceMinutes = end.diff(start, 'minute');
+
+    let attendanceMinutes = end.diff(start, 'minute');
+    if (attendanceMinutes > MAX_GAME_DURATION_MINUTES) {
+      attendanceMinutes = MAX_GAME_DURATION_MINUTES;
+    }
     let playingMinutes = 0;
 
     (game?.tables || []).forEach((table) => {
@@ -50,11 +81,13 @@ export const computePlayingAndBenchMinutes = (attendance = [], game = {}) => {
       });
     });
 
-    const benchMinutes = Math.max(attendanceMinutes - playingMinutes, 0);
-    const previous = result.get(record.player_id) || { playingMinutes: 0, benchMinutes: 0, attendanceMinutes: 0 };
+    if (playingMinutes > attendanceMinutes) {
+      playingMinutes = attendanceMinutes;
+    }
+
+    const previous = result.get(record.player_id) || { playingMinutes: 0, attendanceMinutes: 0 };
     result.set(record.player_id, {
       playingMinutes: previous.playingMinutes + playingMinutes,
-      benchMinutes: previous.benchMinutes + benchMinutes,
       attendanceMinutes: previous.attendanceMinutes + attendanceMinutes,
     });
   });

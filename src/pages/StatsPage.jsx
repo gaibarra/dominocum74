@@ -10,6 +10,7 @@ import PlayerStatsTable from "@/components/stats/PlayerStatsTable";
 import PairStatsTable from "@/components/stats/PairStatsTable";
 import { useToast } from "@/components/ui/use-toast";
 import { getStatsOverview } from "@/lib/stats";
+import { buildStatsControlFigures } from "@/lib/integrity";
 
 const sortNumeric = (field, direction) => (a, b) => {
   const av = Number(a[field] ?? 0);
@@ -21,7 +22,8 @@ const sortNumeric = (field, direction) => (a, b) => {
 
 const StatsPage = () => {
   const { toast } = useToast();
-  const [stats, setStats] = useState({ totals: { totalGames: 0, totalHands: 0 }, players: [], pairs: [] });
+  const emptyStats = { totals: { totalGames: 0, totalHands: 0 }, players: [], pairs: [] };
+  const [stats, setStats] = useState(emptyStats);
   const [isLoading, setIsLoading] = useState(true);
   const [playerSort, setPlayerSort] = useState({ field: "wins", direction: "desc" });
   const [pairSort, setPairSort] = useState({ field: "wins", direction: "desc" });
@@ -29,9 +31,10 @@ const StatsPage = () => {
 
   const loadStats = useCallback(async () => {
     setIsLoading(true);
+    setStats(emptyStats); // reset UI accumulators before fetching fresh data
     try {
       const data = await getStatsOverview();
-      setStats(data);
+      setStats(data || emptyStats);
       setLastUpdated(new Date().toISOString());
     } catch (error) {
       toast({
@@ -73,7 +76,10 @@ const StatsPage = () => {
   }, [stats.players]);
 
   const sortedPlayers = useMemo(() => {
-    const items = [...(stats.players || [])];
+    const items = [...(stats.players || [])].map((p) => ({
+      ...p,
+      losses: Math.max((p.gamesPlayed || 0) - (p.wins || 0), 0),
+    }));
     if (!items.length) return items;
     const { field, direction } = playerSort;
     if (field === "nickname") {
@@ -100,9 +106,11 @@ const StatsPage = () => {
     return items;
   }, [stats.pairs, pairSort, playerLookup]);
 
-  const mostActivePlayer = useMemo(() => {
+  const topWinner = useMemo(() => {
     if (!stats.players?.length) return null;
-    return [...stats.players].sort((a, b) => b.minutesPlayed - a.minutesPlayed)[0];
+    // Prioritize players with the most wins; break ties with games played and minutes for stability.
+    return [...stats.players]
+      .sort((a, b) => (b.wins || 0) - (a.wins || 0) || (b.gamesPlayed || 0) - (a.gamesPlayed || 0) || (b.minutesPlayed || 0) - (a.minutesPlayed || 0))[0];
   }, [stats.players]);
 
   const formattedUpdatedAt = useMemo(() => {
@@ -113,6 +121,10 @@ const StatsPage = () => {
       return lastUpdated;
     }
   }, [lastUpdated]);
+
+  const statsControlFigures = useMemo(() => buildStatsControlFigures(stats), [stats]);
+  const metricFormatter = useMemo(() => new Intl.NumberFormat("es-MX"), []);
+  const formatMetric = useCallback((value) => metricFormatter.format(Math.round(value || 0)), [metricFormatter]);
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -135,9 +147,46 @@ const StatsPage = () => {
       <OverallStatsCards
         totalGames={stats.totals?.totalGames || 0}
         totalHands={stats.totals?.totalHands || 0}
-        mostActivePlayer={mostActivePlayer}
+        topWinner={topWinner}
         lastUpdatedLabel={formattedUpdatedAt}
       />
+
+      {!!stats.players?.length && (
+        <Card className="mb-8 glassmorphism-card border border-dashed border-primary/30">
+          <CardHeader className="pb-2">
+            <CardTitle>Cifras de control</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Comprueba que este código coincida con el impreso en los PDFs de cada velada.
+            </p>
+          </CardHeader>
+          <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Partidas registradas</p>
+              <p className="text-lg font-semibold">{formatMetric(statsControlFigures.totalGames)}</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Manos registradas</p>
+              <p className="text-lg font-semibold">{formatMetric(statsControlFigures.totalHands)}</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Jugadores en ranking</p>
+              <p className="text-lg font-semibold">{formatMetric(statsControlFigures.playersTracked)}</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Minutos presentes</p>
+              <p className="text-lg font-semibold">{`${formatMetric(statsControlFigures.totalMinutesPresent)} min`}</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Minutos en mesa</p>
+              <p className="text-lg font-semibold">{`${formatMetric(statsControlFigures.totalMinutesPlaying)} min`}</p>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">Código de control</p>
+              <p className="text-xl font-mono tracking-[0.3em] text-primary">{statsControlFigures.controlCode}</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {isLoading ? (
         <div className="flex items-center justify-center py-24">

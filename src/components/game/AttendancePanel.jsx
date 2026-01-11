@@ -1,11 +1,11 @@
 // @ts-nocheck
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import dayjs from 'dayjs';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search } from 'lucide-react';
+import { resolvePublicMediaUrl } from '@/lib/mediaStorage';
 
 export default function AttendancePanel({
   game,
@@ -17,9 +17,30 @@ export default function AttendancePanel({
   onBackfillNextDay,
   selectedPlayersInGame,
   id,
+  autoOpenSelectKey,
 }) {
   const [selectedPlayerId, setSelectedPlayerId] = useState('');
-  const [playerQuery, setPlayerQuery] = useState('');
+  const [isSelectOpen, setIsSelectOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const lastAutoKeyRef = useRef(null);
+  const portalTarget = typeof document !== 'undefined' ? document.body : null;
+
+  useEffect(() => {
+    if (!autoOpenSelectKey) return;
+    if (lastAutoKeyRef.current === autoOpenSelectKey) return;
+    lastAutoKeyRef.current = autoOpenSelectKey;
+    setIsSelectOpen(true);
+    setSearchTerm('');
+  }, [autoOpenSelectKey]);
+
+  useEffect(() => {
+    if (!isSelectOpen || typeof document === 'undefined') return undefined;
+    const original = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = original;
+    };
+  }, [isSelectOpen]);
 
   const checkedInIds = useMemo(() => new Set(attendance.filter(a => !!a.check_in_time).map(a => String(a.player_id))), [attendance]);
   const notCheckedInPlayers = useMemo(() => {
@@ -29,20 +50,19 @@ export default function AttendancePanel({
     return all.filter(p => !checkedInIds.has(String(p.id)) && !busyIds.has(String(p.id)));
   }, [playersData, checkedInIds, selectedPlayersInGame]);
 
+  const filteredPlayers = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    if (!term) return notCheckedInPlayers;
+    return notCheckedInPlayers.filter((p) => {
+      const name = `${p.nickname || ''} ${p.name || ''}`.toLowerCase();
+      return name.includes(term);
+    });
+  }, [notCheckedInPlayers, searchTerm]);
+
   const sanitizedBenchPlayers = useMemo(
     () => (Array.isArray(benchPlayers) ? benchPlayers.filter(Boolean) : []),
     [benchPlayers]
   );
-
-  const filteredPlayers = useMemo(() => {
-    if (!playerQuery) return notCheckedInPlayers;
-    const normalized = playerQuery.trim().toLowerCase();
-    if (!normalized) return notCheckedInPlayers;
-    return notCheckedInPlayers.filter((player) => {
-      const haystack = `${player.nickname || ''} ${player.name || ''}`.toLowerCase();
-      return haystack.includes(normalized);
-    });
-  }, [notCheckedInPlayers, playerQuery]);
 
   const hasMissingCheckouts = useMemo(() => attendance.some(a => a.check_in_time && !a.check_out_time), [attendance]);
   const canBackfill = useMemo(() => dayjs().diff(dayjs(game?.date), 'day') >= 1 && hasMissingCheckouts, [game?.date, hasMissingCheckouts]);
@@ -58,7 +78,8 @@ export default function AttendancePanel({
   };
 
   return (
-    <Card id={id} className="bg-card/80 backdrop-blur-sm shadow rounded-xl border border-border/50 mt-6">
+    <>
+      <Card id={id} className="bg-card/80 backdrop-blur-sm shadow rounded-xl border border-border/50 mt-6">
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>Asistencia</CardTitle>
         {canBackfill && (
@@ -69,57 +90,30 @@ export default function AttendancePanel({
       </CardHeader>
       <CardContent className="space-y-6">
         <div>
-          <div className="text-sm font-medium mb-3">Registrar entrada</div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div className="flex-1 space-y-3">
-              <div className="relative">
-                <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={playerQuery}
-                  onChange={(event) => setPlayerQuery(event.target.value)}
-                  placeholder="Busca por apodo o nombre"
-                  className="h-12 rounded-2xl border-2 border-slate-200 pl-11 text-base"
-                />
-              </div>
-              <Select value={selectedPlayerId} onValueChange={setSelectedPlayerId}>
-                <SelectTrigger className="h-16 w-full rounded-2xl border-2 border-slate-200 px-5 text-left text-lg font-semibold focus:ring-2 focus:ring-sky-300">
-                  <SelectValue placeholder="Selecciona jugador (sin mesa ni entrada)" />
-                </SelectTrigger>
-                <SelectContent className="max-h-80 w-[360px] rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-2xl">
-                  {filteredPlayers.map((p) => {
-                    const displayName = p.nickname || p.name || 'Jugador';
-                    const subtitle = p.name && p.nickname ? p.name : p.nickname ? 'Sin nombre oficial' : 'Sin apodo';
-                    const photoSrc = typeof p.photo === 'string' && p.photo.length > 0 ? p.photo : '/domino-icon.svg';
-                    return (
-                      <SelectItem
-                        key={p.id}
-                        value={String(p.id)}
-                        className="relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-3 text-base data-[state=checked]:bg-sky-100"
-                      >
-                        <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-200">
-                          <img src={photoSrc} alt={displayName} className="h-full w-full object-cover" />
-                        </span>
-                        <span className="flex flex-col leading-tight">
-                          <span className="font-semibold text-slate-900">{displayName}</span>
-                          <span className="text-sm text-slate-500">{subtitle}</span>
-                        </span>
-                      </SelectItem>
-                    );
-                  })}
-                  {filteredPlayers.length === 0 && (
-                    <div className="px-3 py-6 text-center text-sm text-muted-foreground">
-                      No encontramos coincidencias.
-                    </div>
-                  )}
-                </SelectContent>
-              </Select>
+            <div className="flex-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSelectOpen(true);
+                  setTimeout(() => {
+                    const el = document.getElementById('attendance-search');
+                    el?.focus();
+                  }, 50);
+                }}
+                className="h-16 w-full rounded-2xl border-2 border-slate-200 px-5 text-left text-lg font-semibold shadow-sm transition focus:outline-none focus:ring-2 focus:ring-sky-300"
+              >
+                {selectedPlayerId
+                  ? (playersData?.[selectedPlayerId]?.nickname || playersData?.[selectedPlayerId]?.name || 'Jugador')
+                  : 'Selecciona un jugador'}
+              </button>
             </div>
             <Button
               onClick={async () => {
                 if (!selectedPlayerId) return;
                 await onCheckIn(selectedPlayerId);
                 setSelectedPlayerId('');
-                setPlayerQuery('');
+                setIsSelectOpen(false);
               }}
               disabled={!selectedPlayerId}
               className="h-16 rounded-2xl px-8 text-lg font-semibold shadow-lg shadow-sky-400/30"
@@ -128,6 +122,58 @@ export default function AttendancePanel({
             </Button>
           </div>
         </div>
+
+        {isSelectOpen && portalTarget && createPortal(
+          <div className="fixed inset-0 z-[60] flex flex-col bg-white px-5 pb-20 pt-10">
+            <div className="mb-4 flex items-center gap-3">
+              <Input
+                id="attendance-search"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Buscar jugador por apodo o nombre..."
+                className="h-12 flex-1 rounded-xl border-slate-200 focus-visible:ring-sky-300"
+              />
+              <Button variant="ghost" onClick={() => setIsSelectOpen(false)} className="shrink-0">
+                Cerrar
+              </Button>
+            </div>
+            <div className="flex-1 overflow-y-auto space-y-2">
+              {filteredPlayers.map((p) => {
+                const displayName = p.name || p.nickname || 'Jugador';
+                const photoSrc = resolvePublicMediaUrl(p.photo || '/domino-icon.svg');
+                const meta = `${p.nickname || ''} ${p.name || ''}`.trim();
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedPlayerId(String(p.id));
+                      setIsSelectOpen(false);
+                      setSearchTerm('');
+                    }}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-left shadow-sm transition hover:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-300"
+                  >
+                    <span className="flex items-center gap-3">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-200">
+                        <img src={photoSrc} alt={displayName} className="h-full w-full object-cover" />
+                      </span>
+                      <span className="flex flex-col leading-tight">
+                        <span className="font-semibold text-slate-900">{displayName}</span>
+                        {meta && <span className="text-xs text-muted-foreground">{meta}</span>}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+              {filteredPlayers.length === 0 && (
+                <div className="px-3 py-6 text-center text-sm text-muted-foreground">
+                  No hay coincidencias.
+                </div>
+              )}
+            </div>
+          </div>,
+          portalTarget
+        )}
 
         {sanitizedBenchPlayers.length > 0 && (
           <div>
@@ -171,5 +217,6 @@ export default function AttendancePanel({
         </div>
       </CardContent>
     </Card>
+    </>
   );
 }

@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { resolvePublicMediaUrl } from "@/lib/mediaStorage";
 import { Edit3, Trash2, Smartphone, Mail, ShieldQuestion, ShieldCheck, ShieldAlert } from "lucide-react";
 
 const PlayerCard = ({ player, index, onEdit, onDelete }) => {
@@ -35,7 +36,7 @@ const PlayerCard = ({ player, index, onEdit, onDelete }) => {
       <Card className="glassmorphism-card h-full flex flex-col overflow-hidden hover:shadow-primary/20 transition-shadow duration-300">
         <CardHeader className="flex flex-row items-center space-x-4 p-4">
           <Avatar className="h-16 w-16 border-2 border-primary">
-            <AvatarImage src={player.photo} alt={player.nickname} />
+            <AvatarImage src={resolvePublicMediaUrl(player.photo)} alt={player.nickname} />
             <AvatarFallback className="text-2xl bg-primary/20 text-primary">
               {player.nickname?.[0]?.toUpperCase() || player.name?.[0]?.toUpperCase()}
             </AvatarFallback>

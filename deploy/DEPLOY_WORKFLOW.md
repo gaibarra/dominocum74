@@ -40,7 +40,7 @@ npm run build
 Esto genera `dist/` con la SPA optimizada. Verifica que no existan errores en consola.
 
 ## 4. Conexión al servidor
-- Conéctate al VPS: `ssh gaibarra@srv641665.niagahoster.com`.
+- Conéctate al VPS: `ssh gaibarra@serie3.niagahoster.com`.
 - Directorio de trabajo remoto: `/home/gaibarra/domino74` (repo desplegado).
 
 ## 5. Actualizar código en el servidor

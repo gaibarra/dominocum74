@@ -36,5 +36,6 @@ export const env = {
   uploadsDir: resolveUploadsDir(),
   uploadsBasePath: process.env.UPLOADS_BASE_PATH || '/uploads',
   uploadsPublicBaseUrl: normalizeBaseUrl(process.env.UPLOADS_PUBLIC_BASE_URL || ''),
-  uploadMaxBytes: Number(process.env.UPLOAD_MAX_BYTES || 50 * 1024 * 1024),
+  // Default 150 MB for anecdote media; override with UPLOAD_MAX_BYTES if needed
+  uploadMaxBytes: Number(process.env.UPLOAD_MAX_BYTES || 150 * 1024 * 1024),
 };

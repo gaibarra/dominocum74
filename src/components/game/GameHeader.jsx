@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { formatDateForDisplay } from '@/lib/dateUtils';
 import { useToast } from "@/components/ui/use-toast";
-import { updateGameStatus as updateGameStatusAPI } from '@/lib/storage';
+import { updateGameStatus as updateGameStatusAPI, getAttendanceByGame } from '@/lib/storage';
 import dayjs from 'dayjs';
 
 const GameHeader = ({
@@ -44,7 +44,19 @@ const GameHeader = ({
     }
     try {
   const { generateGameSummaryPDF } = await import('@/lib/pdfGenerator');
-  await generateGameSummaryPDF(game, playersData);
+  let attendanceRecords = [];
+  if (game?.id) {
+    try {
+      const { attendance = [] } = await getAttendanceByGame(game.id);
+      attendanceRecords = Array.isArray(attendance) ? attendance : [];
+      if (!attendanceRecords.length) {
+        console.warn('PDF control figures: asistencia vacía para la velada', game.id);
+      }
+    } catch (attendanceError) {
+      console.warn('No se pudo obtener asistencia para el PDF:', attendanceError);
+    }
+  }
+  await generateGameSummaryPDF(game, playersData, { attendance: attendanceRecords });
       toast({
         title: "PDF Generado",
         description: "El resumen de la velada se está descargando.",
@@ -69,6 +81,32 @@ const GameHeader = ({
       toast({ title: 'No puedes iniciar aún', description: 'Necesitas al menos 4 jugadores presentes. Pasa lista primero.', variant: 'destructive' });
       document?.getElementById('attendance')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       return;
+    }
+
+    if (newStatus === 'Finalizada') {
+      const activeTables = (game.tables || []).filter((table) => {
+        if (!table) return false;
+        const finished = table.partidaFinished ?? table.partida_finished ?? false;
+        const cancelled = !!(table.cancelled_at ?? table.canceled_at ?? table.cancelledAt);
+        return !finished && !cancelled;
+      });
+
+      if (activeTables.length > 0) {
+        const tableList = activeTables
+          .slice(0, 3)
+          .map((table) => table.table_number || table.tableNumber || table.id)
+          .filter(Boolean)
+          .map((label) => `Mesa ${label}`)
+          .join(', ');
+        const extra = activeTables.length > 3 ? ` y ${activeTables.length - 3} más` : '';
+        toast({
+          title: 'Mesas aún en juego',
+          description: `Finaliza o cancela ${activeTables.length === 1 ? 'esa mesa' : 'esas mesas'} antes de cerrar. ${tableList}${extra}`.trim(),
+          variant: 'destructive',
+        });
+        document?.getElementById('tables-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
     }
 
     // Bloqueo de reapertura tras 12h desde finalización (prioriza closed_at)
@@ -127,7 +165,7 @@ const GameHeader = ({
       className="bg-card p-6 rounded-xl shadow-xl glassmorphism-card mb-8"
     >
       {/* Título y resumen */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-3xl md:text-4xl font-bold gradient-text">
             Velada del {formatDateForDisplay(game.date)}
@@ -153,31 +191,39 @@ const GameHeader = ({
             </div>
           )}
         </div>
-        <div className="flex flex-wrap gap-2 items-center">
-          <span className="text-xs font-medium px-2 py-1 rounded-full bg-emerald-500/15 text-emerald-500 border border-emerald-500/30">
-            Presentes: {presentCount} • Libres: {benchCount}
+        <div className="flex flex-col items-start gap-2 text-sm text-muted-foreground lg:items-end">
+          <span
+            className={`text-sm font-semibold px-3 py-1 rounded-full ${
+              game.status === 'En curso'
+                ? 'bg-green-500/20 text-green-500'
+                : game.status === 'Finalizada'
+                ? 'bg-blue-500/20 text-blue-400'
+                : 'bg-gray-500/20 text-gray-400'
+            }`}
+          >
+            {game.status}
           </span>
+          {game.closed_at ? (
+            <span className="text-xs font-medium px-2 py-1 rounded-full bg-slate-500/15 text-slate-600 dark:text-slate-300 border border-slate-400/30">
+              Clausurada: {new Date(game.closed_at).toLocaleString()}
+            </span>
+          ) : (
+            <span className="text-xs text-muted-foreground">
+              Última actualización: {new Date(game.updated_at || game.date).toLocaleString()}
+            </span>
+          )}
         </div>
       </div>
 
-      {/* Estado y acciones */}
-      <div className="mt-6 pt-4 border-t border-border/20 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <span className={`text-sm font-semibold px-3 py-1 rounded-full ${
-          game.status === 'En curso'
-            ? 'bg-green-500/20 text-green-400'
-            : game.status === 'Finalizada'
-            ? 'bg-blue-500/20 text-blue-400'
-            : 'bg-gray-500/20 text-gray-400'
-        }`}>
-          Estado: {game.status}
-        </span>
-        {game.closed_at && (
-          <span className="text-xs font-medium px-2 py-1 rounded-full bg-slate-500/15 text-slate-600 dark:text-slate-300 border border-slate-400/30">
-            Clausurada: {new Date(game.closed_at).toLocaleString()}
+      {/* Acciones */}
+      <div className="mt-4 pt-4 border-t border-border/20 flex flex-col gap-3">
+        {game.status === 'Borrador' && (
+          <span className="text-xs text-muted-foreground">
+            Pasa lista primero (mín. 4 presentes) para poder agregar mesas.
           </span>
         )}
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 justify-start">
           {game.status === 'Borrador' && (
             <Button
               onClick={() => handleUpdateStatus('En curso')}
@@ -188,11 +234,6 @@ const GameHeader = ({
             >
               <CheckSquare className="mr-2 h-4 w-4" /> Iniciar Velada
             </Button>
-          )}
-          {game.status === 'Borrador' && (
-            <span className="text-xs text-muted-foreground">
-              Pasa lista primero (mín. 4 presentes) para poder agregar mesas.
-            </span>
           )}
           {game.status === 'En curso' && (
             <Button

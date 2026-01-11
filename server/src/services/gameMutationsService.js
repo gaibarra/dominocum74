@@ -651,6 +651,7 @@ export const cancelPendingTable = async (tableId) => {
     if (alreadyStarted) throw new Error('La mesa ya fue finalizada');
 
     await client.query('DELETE FROM game_hands WHERE game_table_id = $1', [tableId]);
+    await client.query('DELETE FROM game_partida_snapshots WHERE game_table_id = $1', [tableId]);
     await client.query('DELETE FROM game_partidas WHERE game_table_id = $1', [tableId]);
     const pairs = await client.query('SELECT id FROM game_pairs WHERE game_table_id = $1', [tableId]);
     const pairIds = pairs.rows.map((p) => p.id);

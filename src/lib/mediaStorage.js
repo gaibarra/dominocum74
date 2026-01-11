@@ -181,3 +181,13 @@ export const deleteAnecdoteMediaByUrl = async (targetUrl) => {
     return false;
   }
 };
+
+export const resolvePublicMediaUrl = (value) => {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) return '';
+  if (/^https?:\/\//i.test(raw)) return raw;
+  const base = normalizeBaseUrl(apiConfig.uploadsBaseUrl || apiConfig.baseUrl || '');
+  if (!base) return raw;
+  const path = raw.startsWith('/') ? raw : `/${raw}`;
+  return `${base}${path}`;
+};

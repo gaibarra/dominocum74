@@ -2,6 +2,7 @@ import React from "react";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { resolvePublicMediaUrl } from "@/lib/mediaStorage";
 
 const cardVariants = {
   hidden: { opacity: 0, y: 20 },
@@ -18,7 +19,7 @@ const cardVariants = {
 
 const numberFormatter = new Intl.NumberFormat("es-MX");
 
-const OverallStatsCards = ({ totalGames = 0, totalHands = 0, mostActivePlayer, lastUpdatedLabel }) => {
+const OverallStatsCards = ({ totalGames = 0, totalHands = 0, topWinner, lastUpdatedLabel }) => {
   return (
     <div className="mb-10 space-y-4">
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
@@ -47,18 +48,18 @@ const OverallStatsCards = ({ totalGames = 0, totalHands = 0, mostActivePlayer, l
         <motion.div custom={2} variants={cardVariants} initial="hidden" animate="visible">
           <Card className="glassmorphism-card border-accent/40 bg-gradient-to-br from-accent/10 via-transparent to-transparent">
             <CardHeader>
-              <CardTitle className="text-sm font-medium text-accent">Jugador/a más activo</CardTitle>
+              <CardTitle className="text-sm font-medium text-accent">Jugador con más partidas ganadas</CardTitle>
             </CardHeader>
             <CardContent className="flex items-center gap-3">
-              {mostActivePlayer ? (
+              {topWinner ? (
                 <>
                   <Avatar className="h-12 w-12">
-                    <AvatarImage src={mostActivePlayer.photo} alt={mostActivePlayer.nickname} />
-                    <AvatarFallback>{mostActivePlayer.nickname?.[0] || '¿'}</AvatarFallback>
+                    <AvatarImage src={resolvePublicMediaUrl(topWinner.photo)} alt={topWinner.nickname} />
+                    <AvatarFallback>{topWinner.nickname?.[0] || '¿'}</AvatarFallback>
                   </Avatar>
                   <div>
-                    <p className="text-lg font-semibold text-accent">{mostActivePlayer.nickname}</p>
-                    <p className="text-xs text-muted-foreground">{numberFormatter.format(mostActivePlayer.minutesPlayed || 0)} min presentes</p>
+                    <p className="text-lg font-semibold text-accent">{topWinner.nickname}</p>
+                    <p className="text-xs text-muted-foreground">{numberFormatter.format(topWinner.wins || 0)} partidas ganadas</p>
                   </div>
                 </>
               ) : (

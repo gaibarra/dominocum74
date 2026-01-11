@@ -2,6 +2,7 @@ import React from "react";
 import { ArrowUpDown } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { resolvePublicMediaUrl } from "@/lib/mediaStorage";
 import { cn } from "@/lib/utils";
 
 const numberFormatter = new Intl.NumberFormat("es-MX");
@@ -10,10 +11,8 @@ const decimalFormatter = new Intl.NumberFormat("es-MX", { minimumFractionDigits:
 const columns = [
   { key: "gamesPlayed", label: "Partidas", align: "text-center" },
   { key: "wins", label: "Victorias", align: "text-center" },
+  { key: "losses", label: "Perdidas", align: "text-center" },
   { key: "handsPlayed", label: "Manos", align: "text-center" },
-  { key: "minutesPlayed", label: "Min. Presente", align: "text-center" },
-  { key: "minutesPlaying", label: "Min. En Mesa", align: "text-center" },
-  { key: "minutesBench", label: "Min. En Banca", align: "text-center" },
   { key: "totalPoints", label: "Puntos Totales", align: "text-center" },
   { key: "pointsPerGame", label: "Pts/Partida", align: "text-center" },
   { key: "winRate", label: "% Victorias", align: "text-center" },
@@ -32,7 +31,7 @@ const PlayerStatsTable = ({ playerStats = [], sortConfig, onSortChange }) => {
 
   return (
     <div className="overflow-x-auto">
-      <Table className="min-w-[960px]">
+      <Table className="min-w-[880px]">
         <TableHeader>
           <TableRow>
             <TableHead className="w-[50px]">#</TableHead>
@@ -56,7 +55,9 @@ const PlayerStatsTable = ({ playerStats = [], sortConfig, onSortChange }) => {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {playerStats.map((player, index) => (
+          {playerStats.map((player, index) => {
+            const losses = Math.max((player.gamesPlayed || 0) - (player.wins || 0), 0);
+            return (
             <TableRow
               key={`${player.id}-${index}`}
               className={cn(
@@ -70,7 +71,7 @@ const PlayerStatsTable = ({ playerStats = [], sortConfig, onSortChange }) => {
               <TableCell>
                 <div className="flex items-center space-x-3">
                   <Avatar className="h-10 w-10">
-                    <AvatarImage src={player.photo} alt={player.nickname} />
+                    <AvatarImage src={resolvePublicMediaUrl(player.photo)} alt={player.nickname} />
                     <AvatarFallback>{player.nickname?.[0] || "?"}</AvatarFallback>
                   </Avatar>
                   <div>
@@ -81,15 +82,14 @@ const PlayerStatsTable = ({ playerStats = [], sortConfig, onSortChange }) => {
               </TableCell>
               <TableCell className="text-center">{numberFormatter.format(player.gamesPlayed)}</TableCell>
               <TableCell className="text-center font-bold text-green-600">{numberFormatter.format(player.wins)}</TableCell>
+              <TableCell className="text-center font-semibold text-amber-700">{numberFormatter.format(losses)}</TableCell>
               <TableCell className="text-center">{numberFormatter.format(player.handsPlayed)}</TableCell>
-              <TableCell className="text-center">{numberFormatter.format(player.minutesPlayed || 0)}</TableCell>
-              <TableCell className="text-center">{numberFormatter.format(player.minutesPlaying || 0)}</TableCell>
-              <TableCell className="text-center">{numberFormatter.format(player.minutesBench || 0)}</TableCell>
               <TableCell className="text-center">{numberFormatter.format(player.totalPoints)}</TableCell>
               <TableCell className="text-center">{decimalFormatter.format(player.pointsPerGame || 0)}</TableCell>
               <TableCell className="text-center">{decimalFormatter.format(player.winRate || 0)}%</TableCell>
             </TableRow>
-          ))}
+            );
+          })}
         </TableBody>
       </Table>
     </div>

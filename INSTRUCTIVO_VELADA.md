@@ -45,12 +45,12 @@ Este instructivo está pensado para cualquier integrante del grupo, sin importar
 ## 8. Consultar estadísticas y PDF
 - En cualquier momento abre **"Estadísticas"** para revisar resultados generales, mejores parejas y manos jugadas.
 - Desde el encabezado de la velada puedes descargar el **PDF resumido**, que incluye asistencia, mesas y anécdotas.
+- Tanto en el PDF como en la página de estadísticas verás una sección **"Cifras de control"** con un código similar a `AB12CD`. Verifica que coincidan para asegurarte de que los datos no hayan sido alterados o queden manos sin registrar.
 
 ### ¿Cómo se calculan los tiempos por jugador?
 - **Minutos Presente**: tiempo transcurrido entre la entrada y la salida registrada en la sección de Asistencia. Sirve para saber cuánto tiempo estuvo realmente en la velada.
 - **Minutos en Mesa**: suma únicamente los minutos en los que el jugador formó parte de una mano activa en cualquier mesa. Si jugó varias manos seguidas, todos esos minutos se suman.
-- **Minutos en Banca**: es la diferencia entre los dos valores anteriores y refleja el tiempo que el jugador estuvo disponible, descansando, mesereando, bebiendo, comiendo o chismeando.
-- Estos tres datos aparecen juntos en la pestaña **"Por Jugador"** para que puedas comparar participación real vs. tiempo de espera.
+- Estos dos datos aparecen juntos en la pestaña **"Por Jugador"** para que puedas comparar disponibilidad contra minutos efectivos en mesa.
 
 ## 9. Consejos finales
 - Guarda cambios con frecuencia: cada acción (mesa, mano, anécdota) se almacena al instante, pero es buena idea refrescar la página si cambias de dispositivo.
