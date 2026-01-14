@@ -1,5 +1,7 @@
 import { query } from '../db/pool.js';
 import { computePlayingMinutes } from '../utils/attendance.js';
+import { buildStatsControlFigures, buildGameControlFigures } from '../utils/controlFigures.js';
+import { fetchGameById } from './gamesService.js';
 
 const rowsToMap = (rows, key) => {
   const map = new Map();
@@ -269,18 +271,40 @@ export const fetchStatsOverview = async () => {
       return a.nickname.localeCompare(b.nickname);
     });
 
-  const pairStatsArray = Array.from(pairStats.values()).map((pair) => ({
-    playerIds: pair.playerIds,
-    gamesPlayed: pair.gamesPlayed,
-    wins: pair.wins,
-    totalPoints: pair.totalPoints,
-    winRate: pair.gamesPlayed ? Number(((pair.wins / pair.gamesPlayed) * 100).toFixed(1)) : 0,
-    pointsPerGame: pair.gamesPlayed ? Number((pair.totalPoints / pair.gamesPlayed).toFixed(1)) : 0,
-  }));
+  const aggregatedPairs = new Map();
+  Array.from(pairStats.values())
+    .filter((pair) => Array.isArray(pair.playerIds) && pair.playerIds.length === 2)
+    .forEach((pair) => {
+      const key = pair.playerIds.map(String).sort().join('-');
+      const current = aggregatedPairs.get(key) || { playerIds: pair.playerIds.map(String).sort(), gamesPlayed: 0, wins: 0, totalPoints: 0 };
+      current.gamesPlayed += pair.gamesPlayed || 0;
+      current.wins += pair.wins || 0;
+      current.totalPoints += pair.totalPoints || 0;
+      aggregatedPairs.set(key, current);
+    });
+
+  const pairStatsArray = Array.from(aggregatedPairs.values())
+    // Evitar ruido de parejas sin actividad real (0 partidas, 0 wins y 0 puntos)
+    .filter((pair) => pair.gamesPlayed > 0 || pair.wins > 0 || pair.totalPoints > 0)
+    .map((pair) => ({
+      playerIds: pair.playerIds,
+      gamesPlayed: pair.gamesPlayed,
+      wins: pair.wins,
+      totalPoints: pair.totalPoints,
+      winRate: pair.gamesPlayed ? Number(((pair.wins / pair.gamesPlayed) * 100).toFixed(1)) : 0,
+      pointsPerGame: pair.gamesPlayed ? Number((pair.totalPoints / pair.gamesPlayed).toFixed(1)) : 0,
+    }));
+
   pairStatsArray.sort((a, b) => {
     if (b.wins !== a.wins) return b.wins - a.wins;
     if (b.gamesPlayed !== a.gamesPlayed) return b.gamesPlayed - a.gamesPlayed;
     return b.totalPoints - a.totalPoints;
+  });
+
+  const controlFigures = buildStatsControlFigures({
+    totalGames: totalPartidas,
+    totalHands,
+    players: sortedPlayerStats,
   });
 
   return {
@@ -290,5 +314,14 @@ export const fetchStatsOverview = async () => {
     },
     players: sortedPlayerStats,
     pairs: pairStatsArray,
+    control: controlFigures,
   };
+};
+
+export const fetchGameControlFigures = async (gameId) => {
+  if (!gameId) return null;
+  const game = await fetchGameById(gameId);
+  if (!game) return null;
+  const attendance = (await query('SELECT * FROM game_attendance WHERE game_id = $1', [gameId])).rows;
+  return buildGameControlFigures({ game, attendance });
 };

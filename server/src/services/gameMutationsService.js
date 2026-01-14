@@ -314,8 +314,31 @@ export const saveGame = async (gameData) => withTransaction(async (client) => {
 });
 
 export const deleteGame = async (id) => {
-  const { rowCount } = await query('DELETE FROM games WHERE id = $1', [id]);
-  return rowCount > 0;
+  return withTransaction(async (client) => {
+    // Borrar en orden inverso de dependencias para cubrir bases con FKs previas sin cascade.
+    const { rows: tableRows } = await client.query('SELECT id FROM game_tables WHERE game_id = $1', [id]);
+    const tableIds = tableRows.map((r) => r.id);
+
+    if (tableIds.length) {
+      await client.query(
+        `DELETE FROM game_pair_players WHERE game_pair_id = ANY(
+           SELECT id FROM game_pairs WHERE game_table_id = ANY($1::uuid[])
+         )`,
+        [tableIds],
+      );
+      await client.query('DELETE FROM game_pairs WHERE game_table_id = ANY($1::uuid[])', [tableIds]);
+      await client.query('DELETE FROM game_hands WHERE game_table_id = ANY($1::uuid[])', [tableIds]);
+      await client.query('DELETE FROM game_partidas WHERE game_table_id = ANY($1::uuid[])', [tableIds]);
+      await client.query('DELETE FROM game_partida_snapshots WHERE game_table_id = ANY($1::uuid[])', [tableIds]);
+      await client.query('DELETE FROM game_tables WHERE id = ANY($1::uuid[])', [tableIds]);
+    }
+
+    await client.query('DELETE FROM game_attendance WHERE game_id = $1', [id]);
+    await client.query('DELETE FROM anecdotes WHERE game_id = $1', [id]);
+
+    const { rowCount } = await client.query('DELETE FROM games WHERE id = $1', [id]);
+    return rowCount > 0;
+  });
 };
 
 export const updateGameStatus = async (id, status) => {

@@ -16,6 +16,7 @@ import {
   savePartidaSnapshot,
   getPartidaSnapshotsByGame,
 } from '../services/gameMutationsService.js';
+import { fetchGameControlFigures } from '../services/statsService.js';
 
 const listQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -107,6 +108,15 @@ export default async function gamesRoutes(app) {
       return reply.notFound('Juego no encontrado');
     }
     return game;
+  });
+
+  app.get('/games/:id/control-figures', async (request, reply) => {
+    const { id } = request.params;
+    const control = await fetchGameControlFigures(id);
+    if (!control) {
+      return reply.notFound('Juego no encontrado');
+    }
+    return control;
   });
 
   app.post('/games', async (request, reply) => {

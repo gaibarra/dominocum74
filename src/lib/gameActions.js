@@ -114,6 +114,17 @@ export const getGameById = async (id) => {
   }
 };
 
+export const getGameControlFigures = async (id) => {
+  if (!id) return null;
+  try {
+    return await apiClient.get(`/games/${id}/control-figures`);
+  } catch (error) {
+    if (error?.status === 404) return null;
+    console.error('Error fetching game control figures:', error);
+    return null;
+  }
+};
+
 export const deleteGame = async (id) => {
   try {
     await apiClient.delete(`/games/${id}`);

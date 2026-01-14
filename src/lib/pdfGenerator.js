@@ -192,7 +192,7 @@ export const generateGameSummaryPDF = async (game, playersList, options = {}) =>
   }
 
   const attendanceRecords = Array.isArray(options?.attendance) ? options.attendance : [];
-  const controlFigures = buildGameControlFigures(game, attendanceRecords);
+  const controlFigures = options?.controlFigures || buildGameControlFigures(game, attendanceRecords);
 
   const doc = new jsPDF();
   const pageHeight = doc.internal.pageSize.height;
@@ -318,10 +318,15 @@ export const generateGameSummaryPDF = async (game, playersList, options = {}) =>
       { label: 'Mesas canceladas', value: controlFigures.cancelledTables },
       { label: 'Manos registradas', value: controlFigures.totalHands },
       { label: 'Partidas declaradas', value: controlFigures.partidasRegistradas },
+      { label: 'Partidas en curso', value: controlFigures.partidasEnCurso },
+      { label: 'Partidas totales', value: controlFigures.partidasTotales },
       { label: 'Jugadores únicos', value: controlFigures.uniquePlayers },
       { label: 'Puntos registrados', value: controlFigures.totalPoints },
+      { label: 'Minutos presentes', value: controlFigures.totalAttendanceMinutes, unit: 'min' },
+      { label: 'Minutos en mesa', value: controlFigures.totalPlayingMinutes, unit: 'min' },
       { label: 'Código de control', value: controlFigures.controlCode },
-    ];
+      controlFigures.source ? { label: 'Fuente', value: controlFigures.source } : null,
+    ].filter(Boolean);
     const cardHeight = 18 + (controlRows.length * 6);
     ensureSpace(cardHeight + CARD_GAP + 6);
     doc.setFillColor(249, 250, 255);

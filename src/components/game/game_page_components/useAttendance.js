@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import dayjs from 'dayjs';
 import { useToast } from '@/components/ui/use-toast';
 import { getAttendanceByGame, checkInPlayer, checkOutPlayer, backfillMissingCheckoutsForGame } from '@/lib/storage';
@@ -53,44 +53,25 @@ export const useAttendance = (game, playersData, selectedPlayersInGame) => {
   const { toast } = useToast();
   const [attendance, setAttendance] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [benchPlayers, setBenchPlayers] = useState([]);
-
-  const computeBenchFallback = useCallback((records) => {
-    if (!playersData) return [];
-    const checkedInIds = new Set(
-      (records || [])
-        .filter((item) => item.check_in_time && !item.check_out_time)
-        .map((item) => String(item.player_id))
-    );
-    const busyIds = new Set(Array.from(selectedPlayersInGame || []).map(String));
-    return Object.values(playersData).filter((player) => {
-      if (!player?.id) return false;
-      const key = String(player.id);
-      return checkedInIds.has(key) && !busyIds.has(key);
-    });
-  }, [playersData, selectedPlayersInGame]);
 
   const loadAttendance = useCallback(async () => {
     if (!game?.id) return;
     setIsLoading(true);
     try {
-      const payload = await getAttendanceByGame(game.id);
-      const rawAttendance = Array.isArray(payload) ? payload : payload?.attendance || [];
+      const data = await getAttendanceByGame(game.id);
       const normalized = dedupeByPlayer(
-        (rawAttendance || [])
+        (data || [])
           .map(normalizeAttendanceRecord)
           .filter((item) => item && item.player_id)
       );
       setAttendance(normalized);
-      const serverBench = Array.isArray(payload?.bench) ? payload.bench : [];
-      setBenchPlayers(serverBench.length ? serverBench : computeBenchFallback(normalized));
     } catch (error) {
       console.warn('No se pudo cargar asistencia:', error?.message);
       toast({ title: 'Asistencia no disponible', description: 'No pudimos actualizar la asistencia. Revisa conexión o extensión del navegador.', variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }
-  }, [computeBenchFallback, game?.id, toast]);
+  }, [game?.id, toast]);
 
   useEffect(() => { loadAttendance(); }, [loadAttendance]);
 
@@ -107,6 +88,18 @@ export const useAttendance = (game, playersData, selectedPlayersInGame) => {
       backfillMissingCheckoutsForGame(game).then(() => loadAttendance()).catch(() => {});
     }
   }, [attendance, game, loadAttendance]);
+
+  // Bench: players with active check-in (no check_out_time) not seated on an active table
+  const benchPlayers = useMemo(() => {
+    const checkedInIds = new Set(
+      attendance
+        .filter(a => !!a.check_in_time && !a.check_out_time)
+        .map(a => String(a.player_id))
+    );
+    const busy = new Set(Array.from(selectedPlayersInGame || []).map(String));
+    const allPlayers = Object.values(playersData || {});
+    return allPlayers.filter(p => checkedInIds.has(String(p.id)) && !busy.has(String(p.id)));
+  }, [attendance, playersData, selectedPlayersInGame]);
 
   const onCheckIn = async (playerId, when = new Date().toISOString()) => {
     try {

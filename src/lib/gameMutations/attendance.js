@@ -13,8 +13,7 @@ const looksClosed = (game) => {
 export const getAttendanceByGame = async (gameId) => {
   try {
     const data = await apiClient.get(`/games/${gameId}/attendance`);
-    if (data && typeof data === 'object') return data;
-    return { attendance: Array.isArray(data) ? data : [], bench: [] };
+    return data || [];
   } catch (error) {
     console.warn('Attendance fetch error:', error.message);
     throw error;
@@ -32,7 +31,7 @@ export const checkOutPlayer = async (gameId, playerId, when = new Date().toISOSt
 export const backfillMissingCheckoutsForGame = async (game) => {
   if (!game?.id) return { updated: 0 };
   try {
-    const { attendance = [] } = await getAttendanceByGame(game.id);
+    const attendance = await getAttendanceByGame(game.id);
     const hasMissing = attendance.some((a) => a.check_in_time && !a.check_out_time);
     const gameClosed = looksClosed(game);
     const isOlderThanTwelveHours = game?.date ? dayjs().diff(dayjs(game.date), 'hour') >= 12 : false;
@@ -61,8 +60,8 @@ export const computeAttendanceDurations = (attendance, fallbackEnd) => {
   return map;
 };
 
-export const computePlayingMinutes = (attendance, game) => {
-  // For cada jugador: playingMinutes = suma de solapes entre su asistencia y las manos jugadas; también seguimos devolviendo attendanceMinutes como referencia.
+export const computePlayingAndBenchMinutes = (attendance, game) => {
+  // For each player: playingMinutes = sum of overlap between their attendance interval and each hand they played; benchMinutes = attendanceMinutes - playingMinutes
   // Build fallback end
   const allHands = (game.tables || []).flatMap(t => t.hands || []);
   const fallbackEnd = allHands
@@ -78,7 +77,7 @@ export const computePlayingMinutes = (attendance, game) => {
     handsByTable.set(t.id, hands);
   });
 
-  const result = new Map(); // playerId -> { playingMinutes, attendanceMinutes }
+  const result = new Map(); // playerId -> { playingMinutes, benchMinutes, attendanceMinutes }
 
   attendance.forEach(a => {
     const start = toDay(a.check_in_time);
@@ -98,11 +97,28 @@ export const computePlayingMinutes = (attendance, game) => {
         if (e.isAfter(s)) playing += e.diff(s, 'minute');
       });
     });
+
+    const bench = Math.max(attMins - playing, 0);
     result.set(a.player_id, {
       playingMinutes: (result.get(a.player_id)?.playingMinutes || 0) + playing,
+      benchMinutes: (result.get(a.player_id)?.benchMinutes || 0) + bench,
       attendanceMinutes: (result.get(a.player_id)?.attendanceMinutes || 0) + attMins,
     });
   });
 
+  return result;
+};
+
+// Compat: mirror server util so integrity/stats can consume a unified helper
+// Returns Map<playerId, { playingMinutes, attendanceMinutes }>
+export const computePlayingMinutes = (attendance = [], game = {}) => {
+  const playingMap = computePlayingAndBenchMinutes(attendance, game);
+  const result = new Map();
+  playingMap.forEach((value, key) => {
+    result.set(key, {
+      playingMinutes: value.playingMinutes,
+      attendanceMinutes: value.attendanceMinutes,
+    });
+  });
   return result;
 };

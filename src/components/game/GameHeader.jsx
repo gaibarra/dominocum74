@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { formatDateForDisplay } from '@/lib/dateUtils';
 import { useToast } from "@/components/ui/use-toast";
-import { updateGameStatus as updateGameStatusAPI, getAttendanceByGame } from '@/lib/storage';
+import { updateGameStatus as updateGameStatusAPI, getAttendanceByGame, getGameControlFigures } from '@/lib/storage';
 import dayjs from 'dayjs';
 
 const GameHeader = ({
@@ -45,6 +45,7 @@ const GameHeader = ({
     try {
   const { generateGameSummaryPDF } = await import('@/lib/pdfGenerator');
   let attendanceRecords = [];
+  let controlFigures = null;
   if (game?.id) {
     try {
       const { attendance = [] } = await getAttendanceByGame(game.id);
@@ -55,8 +56,13 @@ const GameHeader = ({
     } catch (attendanceError) {
       console.warn('No se pudo obtener asistencia para el PDF:', attendanceError);
     }
+    try {
+      controlFigures = await getGameControlFigures(game.id);
+    } catch (controlError) {
+      console.warn('No se pudo obtener cifras de control del servidor para el PDF:', controlError);
+    }
   }
-  await generateGameSummaryPDF(game, playersData, { attendance: attendanceRecords });
+  await generateGameSummaryPDF(game, playersData, { attendance: attendanceRecords, controlFigures });
       toast({
         title: "PDF Generado",
         description: "El resumen de la velada se está descargando.",

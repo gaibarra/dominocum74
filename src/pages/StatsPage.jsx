@@ -122,7 +122,10 @@ const StatsPage = () => {
     }
   }, [lastUpdated]);
 
-  const statsControlFigures = useMemo(() => buildStatsControlFigures(stats), [stats]);
+  const statsControlFigures = useMemo(() => {
+    if (stats?.control) return stats.control;
+    return buildStatsControlFigures(stats);
+  }, [stats]);
   const metricFormatter = useMemo(() => new Intl.NumberFormat("es-MX"), []);
   const formatMetric = useCallback((value) => metricFormatter.format(Math.round(value || 0)), [metricFormatter]);
 

@@ -1,5 +1,5 @@
 import { getPlayers, savePlayer, getPlayerById, deletePlayer } from './players';
-import { getGames, getGamesLight, getGameById, deleteGame, getActiveGame, updateGameStatus } from './gameActions';
+import { getGames, getGamesLight, getGameById, deleteGame, getActiveGame, updateGameStatus, getGameControlFigures } from './gameActions';
 import { 
   saveGame as saveGameMutation, 
   addTableToGameDB,
@@ -24,6 +24,7 @@ export {
   getGamesLight,
   saveGameMutation as saveGame, 
   getGameById,
+  getGameControlFigures,
   deleteGame,
   getActiveGame,
   updateGameStatus,

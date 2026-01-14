@@ -54,10 +54,10 @@ const PlayerDisplay = ({ playerId, playersData }) => {
     "div",
     { className: "flex items-center space-x-2 my-1" },
     React.createElement(
-  AvatarC,
+      AvatarC,
       { className: "h-8 w-8" },
-  React.createElement(AvatarImageC, { src: player.photo, alt: player.nickname }),
-  React.createElement(AvatarFallbackC, null, player.nickname?.[0])
+      React.createElement(AvatarImageC, { src: player.photo, alt: player.nickname }),
+      React.createElement(AvatarFallbackC, null, player.nickname?.[0])
     ),
     React.createElement("span", { className: "font-medium" }, player.nickname)
   );
@@ -110,20 +110,11 @@ export default function GameTableCard({
 
   const scores = currentHandScores || { pair1: "", pair2: "" };
 
-  // Auto-sugerir cierre: cuando detectamos que se alcanzó el objetivo y aún no está marcada como finalizada,
-  // disparamos onFinishTable una sola vez para abrir la confirmación. Si los puntos vuelven a bajar,
-  // rearmamos el trigger para evitar modales fantasma.
-  const promptedRef = React.useRef(false);
-  React.useEffect(() => {
-    if (!isFinished) {
-      promptedRef.current = false;
-      return;
-    }
-    if (!promptedRef.current && !table.partidaFinished && typeof onFinishTable === "function") {
-      promptedRef.current = true;
-      onFinishTable(table.id);
-    }
-  }, [isFinished, table.partidaFinished, onFinishTable, table?.id]);
+  const handleAddHandClick = (event) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    onAddHand(table.id);
+  };
 
   return React.createElement(
     CardC,
@@ -190,8 +181,15 @@ export default function GameTableCard({
       !isFinished &&
         gameStatus !== "Finalizada" &&
         React.createElement(
-          "div",
-          { className: "mt-4 p-4 border-t border-primary/10" },
+          "form",
+          {
+            className: "mt-4 p-4 border-t border-primary/10",
+            onSubmit: (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleAddHandClick(e);
+            },
+          },
           React.createElement(
             "h4",
             { className: "font-semibold mb-3 text-lg text-center text-secondary" },
@@ -219,6 +217,9 @@ export default function GameTableCard({
                 step: "1",
                 value: scores.pair1 ?? "",
                 onChange: (/** @type {any} */ e) => onScoreChange("pair1", e.target.value),
+                onKeyDown: (e) => {
+                  if (e.key === "Enter") handleAddHandClick(e);
+                },
                 className: "text-center text-xl h-12 neumorphism-input-inset",
                 placeholder: "0",
               })
@@ -242,6 +243,9 @@ export default function GameTableCard({
                 step: "1",
                 value: scores.pair2 ?? "",
                 onChange: (/** @type {any} */ e) => onScoreChange("pair2", e.target.value),
+                onKeyDown: (e) => {
+                  if (e.key === "Enter") handleAddHandClick(e);
+                },
                 className: "text-center text-xl h-12 neumorphism-input-inset",
                 placeholder: "0",
               })
@@ -253,7 +257,8 @@ export default function GameTableCard({
             React.createElement(
               ButtonC,
               {
-                onClick: () => onAddHand(table.id),
+                type: "submit",
+                onClick: handleAddHandClick,
                 className: "w-full neumorphism-button bg-gradient-to-r from-secondary to-purple-600 text-white",
               },
               React.createElement(Plus, { className: "mr-2 h-5 w-5" }),
@@ -287,7 +292,7 @@ export default function GameTableCard({
           ),
           React.createElement(
             ButtonC,
-            { onClick: () => onFinishTable?.(table.id), className: "neumorphism-button bg-primary text-primary-foreground" },
+            { type: "button", onClick: () => onFinishTable?.(table.id), className: "neumorphism-button bg-primary text-primary-foreground" },
             "Cerrar Partida"
           )
         ),

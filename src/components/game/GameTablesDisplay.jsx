@@ -60,6 +60,7 @@ const cardVariants = {
  *  gameStatus: any,
  *  showFinishedTables: boolean,
  *  selectedTableId?: string|number|null,
+ *  onSelectTable?: (tableId: string|number|null) => void,
  * }} props
  */
 export default function GameTablesDisplay({
@@ -74,7 +75,10 @@ export default function GameTablesDisplay({
   gameStatus,
   showFinishedTables,
   selectedTableId,
+  onSelectTable,
 }) {
+  const normalizeId = (id) => (id === null || id === undefined ? null : String(id));
+
   const filteredTables = useMemo(
     () =>
       tables.filter((/** @type {Table} */ table) =>
@@ -83,7 +87,7 @@ export default function GameTablesDisplay({
     [tables, showFinishedTables]
   );
 
-  const [activeTab, setActiveTab] = useState(() => filteredTables[0]?.id ?? null);
+  const [activeTab, setActiveTab] = useState(() => normalizeId(filteredTables[0]?.id));
   const [isTabLoading, setIsTabLoading] = useState(false);
   /** @type {[{tableId: string|number}|null, React.Dispatch<React.SetStateAction<{tableId: string|number}|null>>]} */
   // @ts-ignore
@@ -122,13 +126,17 @@ export default function GameTablesDisplay({
 
   useEffect(() => {
     // Si hay una mesa seleccionada desde arriba y está en el subconjunto filtrado, enfocarla
-    if (selectedTableId && filteredTables.find((/** @type {Table} */ t) => t.id === selectedTableId)) {
-      setActiveTab(selectedTableId);
+    const normalizedSelected = normalizeId(selectedTableId);
+    if (
+      normalizedSelected &&
+      filteredTables.find((/** @type {Table} */ t) => normalizeId(t.id) === normalizedSelected)
+    ) {
+      setActiveTab(normalizedSelected);
       return;
     }
     // Si la pestaña activa dejó de existir por el filtro, seleccionar la primera disponible
-    if (!filteredTables.find((/** @type {Table} */ t) => t.id === activeTab)) {
-      setActiveTab(filteredTables[0]?.id ?? null);
+    if (!filteredTables.find((/** @type {Table} */ t) => normalizeId(t.id) === activeTab)) {
+      setActiveTab(normalizeId(filteredTables[0]?.id));
     }
   }, [filteredTables, activeTab, selectedTableId]);
 
@@ -136,9 +144,11 @@ export default function GameTablesDisplay({
    * @param {string|number} id
    */
   const onSelectTab = (id) => {
-    if (id === activeTab) return;
-    setActiveTab(id);
+    const normalized = normalizeId(id);
+    if (normalized === activeTab) return;
+    setActiveTab(normalized);
     setIsTabLoading(true);
+    onSelectTable?.(normalized);
   };
 
   // (Mount notifier hoisted above)
@@ -217,7 +227,7 @@ export default function GameTablesDisplay({
             onClick: () => onSelectTab(t.id),
             className:
               `px-3 py-1 rounded-md border text-sm ${
-                activeTab === t.id
+                activeTab === normalizeId(t.id)
                   ? "bg-primary text-primary-foreground border-primary"
                   : "bg-background border-border text-foreground hover:bg-muted"
               }`,
@@ -237,7 +247,7 @@ export default function GameTablesDisplay({
       filteredTables.map((/** @type {Table} */ table, /** @type {number} */ idx) =>
         React.createElement(
           "div",
-          { key: table.id, hidden: activeTab !== table.id },
+          { key: table.id, hidden: activeTab !== normalizeId(table.id) },
           React.createElement(
             motion.div,
             { custom: idx, variants: cardVariants, layout: true },

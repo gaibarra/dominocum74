@@ -2,6 +2,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { addHandToTableDB as addHandToTable } from '@/lib/storage';
 import { processEditHand } from './handManagement/editHandLogic';
+const logHand = (...args) => {
+  if (typeof console !== 'undefined') console.info('[hand]', ...args);
+};
 
 export const useHandManagement = (
   game,
@@ -46,6 +49,7 @@ export const useHandManagement = (
   // Agrega mano con validación 0–0 y optimistic update
   const handleAddHand = useCallback(async (tableId) => {
     if (!game?.tables) return;
+    logHand('add:start', { tableId, input: currentHandScores[tableId] });
 
     const input = currentHandScores[tableId] || { pair1: "", pair2: "" };
   let p1 = parseInt(input.pair1, 10) || 0;
@@ -84,6 +88,7 @@ export const useHandManagement = (
       pair_2_score: p2,
       duration_seconds: null
     };
+    logHand('add:optimistic', { tableId, tempId, p1, p2 });
     setGame(prev => ({
       ...prev,
       tables: prev.tables.map(t => {
@@ -102,6 +107,7 @@ export const useHandManagement = (
     // Persistir en BD, y en fallo revertir con fetch completo
     try {
       const savedHand = await addHandToTable(game.id, tableId, newHand);
+      logHand('add:server-saved', { tableId, handId: savedHand?.id });
       setGame(prev => {
         if (!prev) return prev;
         return {
@@ -139,6 +145,7 @@ export const useHandManagement = (
         description: err.message,
         variant: "destructive"
       });
+      logHand('add:error', { tableId, error: err?.message });
       fetchGameAndPlayersData();
     }
   }, [
